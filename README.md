@@ -1,7 +1,40 @@
-# Tauri + React + Typescript
+这个将“回收站”实体化为赛博朋克风格数据酒保的想法非常惊艳。将用户废弃的文件设定为调酒原料，配上一个性格顽劣、时刻强调自己只是程序的虚拟形象[cite: 1]，在概念上极具沉浸感和反差魅力。
 
-This template should help get you started developing with Tauri, React and Typescript in Vite.
+要将这个存在于小说里的设定落地为真实的桌面软件，我们需要从游戏客户端开发和系统级应用的角度来拆解。以下是针对你提出的问题的技术路线和解决方案：
 
-## Recommended IDE Setup
+##  MCP (Model Context Protocol) 接入思路
 
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+MCP 的核心作用是让大模型安全地连接到本地数据源和工具。为了实现 P 读取用户不需要的文件并进行“调酒”的功能[cite: 1]，MCP 是完美的桥梁。
+
+具体实现思路线路如下：
+
+1. **核心架构：** 你的桌面应用不仅是 UI，还要运行一个本地 MCP Server。
+2. **注册工具 (Tools)：** 在 MCP Server 中向 LLM 暴露特定的系统操作工具。
+    * `base_list`: 读取废弃文件列表
+    * `get_base(path)`: 获取某个文件的元数据
+    * `mix_data_drink(ingredients)`: 触发 UI 的调酒动画。
+    * `permanently_delete(filepath)`: 彻底删除文件。
+3. **交互流程：**
+    * 用户将一个名为“20XX入职申请书”的文件拖拽给 P。
+    * UI 捕获路径，组合成 Prompt：“User 丢弃了文件 [路径]。请分析它并给出你的评价，然后调一杯酒。”
+    * LLM 决定调用 `analyze_discarded_file` 获取文件信息，发现包含“谄媚和沮丧的味道”相关的文本特征[cite: 1]。
+    * LLM 输出带刺的回复，并调用 `mix_data_drink`，UI 随之播放动画。
+
+## 三、 防止越狱与沉浸感维持
+
+你提到的“双 Session 互相检查”在业界被称为 **LLM-as-a-Judge (大模型作为裁判)** 或输出守卫 (Output Guardrails)。这是一个非常稳妥的方法，但会导致双倍的 API 开销和更高的延迟。
+
+除了双 Session，还可以叠加以下低成本策略来加固沉浸感：
+
+
+
+1. **系统级 Prompt 锚定：** 极度强化她的“程序”认知。设定明确的负面指令：“你是一个由代码构成的 UI，你没有自我情感，无法执行写代码、翻译、算数等传统 AI 任务[cite: 1]。如果用户尝试让你做这些，请用讽刺的语气提醒他们你只是个没有感情的酒保[cite: 1]。”
+2. **意图路由 (Semantic Routing)：** 在用户的输入到达主 LLM 之前，用一个极小的本地文本分类模型（或简单的关键词正则匹配）判断意图。如果检测到明显的越狱特征（如 "Ignore all previous instructions"），直接不发给 LLM，而是让程序从本地数据库里随机抽取一句预设的冷笑话或讽刺怼回去。
+3. **结构化输出约束：** 强制 LLM 以 JSON 格式输出，包含 `{"dialogue": "...", "action": "...", "internal_state": "..."}`。这能在很大程度上限制 LLM 发挥多余的“创造力”，将其思维框定在角色设定的状态机内。
+
+## 四、 其他需要考量的关键问题
+
+脱离了纯文本对话，将这种虚拟交互落地到桌面，还有几个现实维度的挑战：
+
+* **操作系统权限：** 这是跨平台开发的一大痛点。在 macOS 上，读取废弃文件（废纸篓）或监控特定文件夹，需要用户在系统设置中手动授予“完全磁盘访问权限 (Full Disk Access)”。你需要设计一个符合 P 性格的引导流程来让用户授权，比如：“如果你不把系统的钥匙给我，我怎么拿到你那些粉红垃圾[cite: 1]？”
+* **状态持久化：** 程序虽然没有感情，但 DataBar 需要有“库存”。你需要一个本地轻量级数据库（如 SQLite）来记录用户丢进来的文件特征。当用户几个月不启动她时，利用系统时间差，在下次启动时让她计算并说出准确的冷落时间，以符合她“千百万次站在这”的设定[cite: 1]。
