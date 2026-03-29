@@ -7,6 +7,7 @@ name = "B4-rt_3n-der"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "dirs",
  "serde",
  "serde_json",
  "tauri",

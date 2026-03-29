@@ -104,10 +104,7 @@ struct DeleteResponse {
 }
 
 fn desktop_dir() -> PathBuf {
-    if let Ok(home) = env::var("HOME") {
-        return PathBuf::from(home).join("/Desktop");
-    }
-    PathBuf::from("~/Desktop")
+    return dirs::desktop_dir().unwrap_or(".".into())
 }
 
 fn bar_root_dir() -> Result<PathBuf, String> {
