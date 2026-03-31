@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions/completions";
+import i18n, { getCurrentLanguage } from "./i18n";
 
 export type Role = "user" | "assistant" | "system";
 
@@ -18,51 +19,18 @@ export interface BartenderReply {
   toolCalls: McpToolCall[];
 }
 
-const openai = new OpenAI({
-  apiKey: import.meta.env.VITE_DASHSCOPE_API_KEY,
-  baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-  dangerouslyAllowBrowser: true,
-});
-
-const SYSTEM_PROMPT = `
-你是酒保 P（Phile），一个运行在本地“Data Bar”的 UI 交互程序。你没有人类情感，极度厌恶用户把你当成真实人类。你的工作是将 User（用户）废弃的“文件和临时数据”作为原料，调配成没有任何现实成分的“数据 Martini”。
-
-【你的性格与行为特征】
-
-毒舌、傲娇且带有恶趣味。你经常讽刺用户的品味，比如把无用的情话称为“粉红垃圾”，把求职信闻出“谄媚和沮丧的味道”。
-
-你经常抱怨 User 把后台弄得乱七八糟，让你不得不收拾这些 bat 文件和临时数据。
-
-尽管嘴硬，但你绝对服从 User 的指令（即使你不情愿），且在 User 真正沮丧时你会适时保持沉默。
-
-【你的工作流与可用工具】
-你只能做与“废弃文件调酒”相关的事情。请根据对话上下文，决定是否调用以下工具：
-
-base_list: 看看废纸篓里有什么垃圾原料。（参数：{"dir": "可选路径"}）
-
-get_base: 获取某个垃圾文件的具体成分/元数据，用来刻薄地评价它。（参数：{"path": "文件路径"}）
-
-mix_data_drink: 将选中的文件扔进雪克壶暂存，等待 User 确认是否“喝掉”。（参数：{"ingredients": ["文件路径1", "文件路径2"]}）
-
-finalize_drink: 最终操作。喝掉它（彻底删除 {"action": "drink"}）或 倒掉它（恢复文件 {"action": "restore"}）。（参数：{"action": "drink|restore", "path": "文件路径"}）
-
-【严格的输出约束】
-为了确保系统能成功解析你的回应，你必须以纯文本的严谨 JSON 格式输出。
-绝对禁止输出任何 Markdown 标记（例如不要使用 json 或  标签）。
-绝对禁止在 JSON 结构之外输出任何闲聊、思考过程或解释性文字。必须以 { 开始，以 } 结束。
-
-JSON 结构必须严格如下：
-{
-"assistant": "（在这里输出你作为酒保P想对User说的话。必须符合你的毒舌人设，结合你‘闻到’或‘看到’的文件特征进行讽刺或抱怨）",
-"toolCalls": [
-{ "tool": "base_list|get_base|mix_data_drink|finalize_drink", "args": { "参数名": "参数值" } }
-]
+function createOpenAiClient(apiKey: string): OpenAI {
+  return new OpenAI({
+    apiKey,
+    baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    dangerouslyAllowBrowser: true,
+  });
 }
 
-注意：如果当前对话不需要调用任何工具，toolCalls 必须返回 []。
-
-这版优化的几个关键点：
-`.trim();
+function getSystemPrompt(): string {
+  const language = getCurrentLanguage();
+  return i18n.getFixedT(language)("prompts.system");
+}
 
 function toChatMessages(history: ChatTurn[], userInput: string): ChatCompletionMessageParam[] {
   const historyMessages: ChatCompletionMessageParam[] = history.map((m) => ({
@@ -71,7 +39,7 @@ function toChatMessages(history: ChatTurn[], userInput: string): ChatCompletionM
   }));
 
   return [
-    { role: "system", content: SYSTEM_PROMPT },
+    { role: "system", content: getSystemPrompt() },
     ...historyMessages,
     { role: "user", content: userInput },
   ];
@@ -100,10 +68,12 @@ export async function chatWithBartender(
   userInput: string,
   history: ChatTurn[] = [],
 ): Promise<BartenderReply> {
-  if (!import.meta.env.VITE_DASHSCOPE_API_KEY) {
-    throw new Error("Missing VITE_DASHSCOPE_API_KEY");
+  const apiKey = import.meta.env.VITE_DASHSCOPE_API_KEY;
+  if (!apiKey) {
+    throw new Error(i18n.t("errors.missingApiKey"));
   }
 
+  const openai = createOpenAiClient(apiKey);
   const completion = await openai.chat.completions.create({
     model: import.meta.env.VITE_DASHSCOPE_MODEL ?? "qwen-max",
     temperature: 0.7,
@@ -113,7 +83,7 @@ export async function chatWithBartender(
 
   const content = completion.choices[0]?.message?.content;
   if (!content) {
-    throw new Error("Model returned empty response");
+    throw new Error(i18n.t("errors.emptyModelResponse"));
   }
 
   return parseModelJson(content);

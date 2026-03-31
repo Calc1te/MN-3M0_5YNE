@@ -4,8 +4,10 @@ import {
   ContextMenuItem,
   ContextMenuTrigger
 } from "@/components/ui/8bit/context-menu.tsx";
+import { useTranslation } from "react-i18next";
 
 export default function Menu() {
+  const { t } = useTranslation();
 
   const handleSetting = () => {
     console.log("to setting")
@@ -16,10 +18,10 @@ export default function Menu() {
 
   return (
       <ContextMenu>
-        <ContextMenuTrigger >Right click</ContextMenuTrigger>
+        <ContextMenuTrigger >{t("menu.trigger")}</ContextMenuTrigger>
         <ContextMenuContent>
-          <ContextMenuItem onSelect={handleSetting}>Settings</ContextMenuItem>
-          <ContextMenuItem onSelect={handleAbout}>About</ContextMenuItem>
+          <ContextMenuItem onSelect={handleSetting}>{t("menu.settings")}</ContextMenuItem>
+          <ContextMenuItem onSelect={handleAbout}>{t("menu.about")}</ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
   );
