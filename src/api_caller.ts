@@ -68,7 +68,7 @@ export async function chatWithBartender(
   userInput: string,
   history: ChatTurn[] = [],
 ): Promise<BartenderReply> {
-  const apiKey = import.meta.env.VITE_DASHSCOPE_API_KEY;
+  const apiKey = import.meta.env.VITE_BARTENDER_LLM_API;
   if (!apiKey) {
     throw new Error(i18n.t("errors.missingApiKey"));
   }
