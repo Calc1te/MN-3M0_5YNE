@@ -6,7 +6,8 @@
     "greet": "Greet",
     "language": "Language",
     "viteLogoAlt": "Vite logo",
-    "tauriLogoAlt": "Tauri logo"
+    "tauriLogoAlt": "Tauri logo",
+    "about": "This is about page"
   },
   "menu": {
     "trigger": "Right click",

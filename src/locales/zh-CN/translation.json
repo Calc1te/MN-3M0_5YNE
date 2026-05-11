@@ -6,7 +6,8 @@
     "greet": "打招呼",
     "language": "语言",
     "viteLogoAlt": "Vite 图标",
-    "tauriLogoAlt": "Tauri 图标"
+    "tauriLogoAlt": "Tauri 图标",
+    "about": "关于"
   },
   "menu": {
     "trigger": "右键菜单",
