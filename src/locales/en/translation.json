@@ -15,7 +15,7 @@
     "about": "About"
   },
   "errors": {
-    "missingApiKey": "Missing VITE_DASHSCOPE_API_KEY",
+    "missingApiKey": "Missing VITE_ARK_API_KEY",
     "emptyModelResponse": "Model returned empty response"
   },
   "prompts": {

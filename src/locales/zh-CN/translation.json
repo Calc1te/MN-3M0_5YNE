@@ -15,7 +15,7 @@
     "about": "关于"
   },
   "errors": {
-    "missingApiKey": "缺少 VITE_DASHSCOPE_API_KEY",
+    "missingApiKey": "缺少 VITE_ARK_API_KEY",
     "emptyModelResponse": "模型返回为空"
   },
   "prompts": {

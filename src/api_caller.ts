@@ -1,5 +1,8 @@
 import OpenAI from "openai";
-import type { ChatCompletionMessageParam } from "openai/resources/chat/completions/completions";
+import type {
+  ChatCompletionCreateParamsNonStreaming,
+  ChatCompletionMessageParam,
+} from "openai/resources/chat/completions/completions";
 import i18n, { getCurrentLanguage } from "./i18n";
 
 export type Role = "user" | "assistant" | "system";
@@ -19,10 +22,13 @@ export interface BartenderReply {
   toolCalls: McpToolCall[];
 }
 
+const BARTENDER_API =
+  import.meta.env.VITE_BARTENDER_URL ?? "https://ark.cn-beijing.volces.com/api/v3";
+
 function createOpenAiClient(apiKey: string): OpenAI {
   return new OpenAI({
     apiKey,
-    baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    baseURL: BARTENDER_API,
     dangerouslyAllowBrowser: true,
   });
 }
@@ -45,8 +51,24 @@ function toChatMessages(history: ChatTurn[], userInput: string): ChatCompletionM
   ];
 }
 
+function extractJsonText(raw: string): string {
+  const trimmed = raw.trim();
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  if (fenced?.[1]) {
+    return fenced[1].trim();
+  }
+
+  const start = trimmed.indexOf("{");
+  const end = trimmed.lastIndexOf("}");
+  if (start >= 0 && end > start) {
+    return trimmed.slice(start, end + 1);
+  }
+
+  return trimmed;
+}
+
 function parseModelJson(raw: string): BartenderReply {
-  const parsed = JSON.parse(raw) as Partial<BartenderReply>;
+  const parsed = JSON.parse(extractJsonText(raw)) as Partial<BartenderReply>;
   const assistant = typeof parsed.assistant === "string" ? parsed.assistant : "……";
   const toolCalls = Array.isArray(parsed.toolCalls)
     ? parsed.toolCalls.filter(
@@ -68,18 +90,24 @@ export async function chatWithBartender(
   userInput: string,
   history: ChatTurn[] = [],
 ): Promise<BartenderReply> {
-  const apiKey = import.meta.env.VITE_BARTENDER_LLM_API;
+  const apiKey = import.meta.env.VITE_BARTENDER_LLM_API_KEY;
   if (!apiKey) {
     throw new Error(i18n.t("errors.missingApiKey"));
   }
 
+  const model = import.meta.env.VITE_BARTENDER_MODEL;
+  if (!model) {
+    throw new Error("Missing VITE_ARK_ENDPOINT_ID");
+  }
+
   const openai = createOpenAiClient(apiKey);
-  const completion = await openai.chat.completions.create({
-    model: import.meta.env.VITE_DASHSCOPE_MODEL ?? "qwen-max",
+  const request: ChatCompletionCreateParamsNonStreaming = {
+    model,
     temperature: 0.7,
     messages: toChatMessages(history, userInput),
-    response_format: { type: "json_object" },
-  });
+  };
+
+  const completion = await openai.chat.completions.create(request);
 
   const content = completion.choices[0]?.message?.content;
   if (!content) {
