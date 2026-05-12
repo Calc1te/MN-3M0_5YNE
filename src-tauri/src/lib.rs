@@ -20,6 +20,7 @@ use std::{
 };
 
 use chrono::prelude::*;
+use tower_http::cors::CorsLayer;
 use vector_db::lance::{self, MEMORY_VECTOR_DIMS, MemoryRecord};
 
 const DEFAULT_MAX_CHARS: usize = 2000;
@@ -116,7 +117,7 @@ struct AddMemoryRequest {
 struct AddMemoryResponse {
     id: String,
     text: String,
-    vector: [f32; MEMORY_VECTOR_DIMS],
+    vector: Vec<f32>,
 }
 
 #[derive(Serialize)]
@@ -368,6 +369,14 @@ fn read_base_list(dir_override: Option<&str>) -> Result<Vec<BaseEntry>, String> 
     for entry in entries {
         let entry = entry.map_err(|e| format!("Failed to read entry: {e}"))?;
         let path = entry.path();
+        let name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or_else(|| "Invalid UTF-8 file name".to_string())?;
+        if name.starts_with('.') && !name[1..].contains('.') {
+            continue;
+        }
+
         let metadata = entry
             .metadata()
             .map_err(|e| format!("Failed to read metadata for {}: {e}", path.display()))?;
@@ -378,6 +387,8 @@ fn read_base_list(dir_override: Option<&str>) -> Result<Vec<BaseEntry>, String> 
             DEFAULT_MAX_CHARS,
         )?);
     }
+
+    out.sort_by(|a, b| b.name.chars().count().cmp(&a.name.chars().count()));
 
     Ok(out)
 }
@@ -531,24 +542,29 @@ fn change_base_directory_internal(path: String) -> Result<String, String> {
     Ok(canonical.to_string_lossy().into_owned())
 }
 
-fn normalize_memory_vector(
-    vector: Option<Vec<f32>>,
-    text: &str,
-) -> Result<[f32; MEMORY_VECTOR_DIMS], String> {
-    if let Some(values) = vector {
-        return values
-            .try_into()
-            .map_err(|_| format!("vector must contain exactly {MEMORY_VECTOR_DIMS} numbers"));
+fn normalize_memory_vector(vector: Option<Vec<f32>>, _text: &str) -> Result<Vec<f32>, String> {
+    let values = vector.ok_or_else(|| {
+        format!("vector is required; embedding model output must contain {MEMORY_VECTOR_DIMS} f32 values")
+    })?;
+
+    if values.len() != MEMORY_VECTOR_DIMS {
+        return Err(format!(
+            "vector must contain exactly {MEMORY_VECTOR_DIMS} numbers, got {}",
+            values.len()
+        ));
     }
 
-    let char_count = text.chars().count() as f32;
-    let word_count = text.split_whitespace().count() as f32;
-    let checksum = text
-        .bytes()
-        .fold(0u32, |acc, byte| acc.wrapping_add(byte as u32)) as f32
-        / 255.0;
+    if let Some((index, value)) = values
+        .iter()
+        .enumerate()
+        .find(|(_, value)| !value.is_finite())
+    {
+        return Err(format!(
+            "vector contains a non-finite value at index {index}: {value}"
+        ));
+    }
 
-    Ok([char_count, word_count, checksum])
+    Ok(values)
 }
 
 fn build_memory_id() -> String {
@@ -731,6 +747,7 @@ async fn start_local_api() -> Result<(), String> {
         .route("/base/delete", post(permanently_delete_handler))
         .route("/memory/add", post(add_memory_handler))
         .route("/time", get(get_time_and_date))
+        .layer(CorsLayer::permissive())
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:47821")

@@ -22,15 +22,61 @@ export interface BartenderReply {
   toolCalls: McpToolCall[];
 }
 
+export interface memoryEntry {
+  vector: Float32Array;
+  content: string;
+}
+
+enum ModelType {
+  Bartender,
+}
+
 const BARTENDER_API =
   import.meta.env.VITE_BARTENDER_URL ?? "https://ark.cn-beijing.volces.com/api/v3";
 
-function createOpenAiClient(apiKey: string): OpenAI {
+const EMBD_API =
+  import.meta.env.VITE_EMBD_URL ?? "https://ark.cn-beijing.volces.com/api/v3";
+
+function createOpenAiClient(apiKey: string, model: ModelType): OpenAI {
   return new OpenAI({
     apiKey,
-    baseURL: BARTENDER_API,
+    baseURL: model === ModelType.Bartender ? BARTENDER_API : BARTENDER_API,
     dangerouslyAllowBrowser: true,
   });
+}
+
+type ArkMultimodalEmbeddingInput =
+  | {
+      type: "text";
+      text: string;
+    }
+  | {
+      type: "image_url";
+      image_url: {
+        url: string;
+      };
+    }
+  | {
+      type: "video_url";
+      video_url: {
+        url: string;
+      };
+    };
+
+interface ArkMultimodalEmbeddingResponse {
+  data?: {
+    embedding?: number[];
+  };
+  error?: {
+    message?: string;
+  };
+}
+
+function buildEmbeddingUrl(baseUrl: string): string {
+  const trimmed = baseUrl.replace(/\/+$/, "");
+  return trimmed.endsWith("/embeddings/multimodal")
+    ? trimmed
+    : `${trimmed}/embeddings/multimodal`;
 }
 
 function getSystemPrompt(): string {
@@ -68,22 +114,35 @@ function extractJsonText(raw: string): string {
 }
 
 function parseModelJson(raw: string): BartenderReply {
-  const parsed = JSON.parse(extractJsonText(raw)) as Partial<BartenderReply>;
-  const assistant = typeof parsed.assistant === "string" ? parsed.assistant : "……";
-  const toolCalls = Array.isArray(parsed.toolCalls)
-    ? parsed.toolCalls.filter(
-        (t): t is McpToolCall =>
-          typeof t === "object" &&
-          t !== null &&
-          "tool" in t &&
-          "args" in t &&
-          typeof (t as { tool: unknown }).tool === "string" &&
-          typeof (t as { args: unknown }).args === "object" &&
-          (t as { args: unknown }).args !== null,
-      )
-    : [];
+  try {
+    const parsed = JSON.parse(extractJsonText(raw)) as Partial<BartenderReply>;
+    const assistant = typeof parsed.assistant === "string" ? parsed.assistant : "……";
+    const toolCalls = Array.isArray(parsed.toolCalls)
+      ? parsed.toolCalls.filter(
+          (t): t is McpToolCall =>
+            typeof t === "object" &&
+            t !== null &&
+            "tool" in t &&
+            "args" in t &&
+            typeof (t as { tool: unknown }).tool === "string" &&
+            typeof (t as { args: unknown }).args === "object" &&
+            (t as { args: unknown }).args !== null,
+        )
+      : [];
 
-  return { assistant, toolCalls };
+    const reply: BartenderReply = { assistant, toolCalls };
+
+    try {
+      console.log("reply:", JSON.stringify(reply, null, 2));
+    } catch {
+      console.log("reply:", reply);
+    }
+
+    return reply;
+  } catch (err) {
+    console.error("Failed to parse model JSON:", err, "raw:", raw);
+    return { assistant: "……", toolCalls: [] };
+  }
 }
 
 export async function chatWithBartender(
@@ -100,7 +159,7 @@ export async function chatWithBartender(
     throw new Error("Missing VITE_ARK_ENDPOINT_ID");
   }
 
-  const openai = createOpenAiClient(apiKey);
+  const openai = createOpenAiClient(apiKey, ModelType.Bartender);
   const request: ChatCompletionCreateParamsNonStreaming = {
     model,
     temperature: 0.7,
@@ -117,6 +176,57 @@ export async function chatWithBartender(
   return parseModelJson(content);
 }
 
+export async function createMemoryVector(
+  memoryText: string,
+  memoryContent: string,
+): Promise<memoryEntry> {
+  const apiKey =
+    import.meta.env.VITE_BARTENDER_LLM_API_KEY;
+  if (!apiKey) {
+    throw new Error(i18n.t("errors.missingApiKey"));
+  }
+
+  const model = import.meta.env.VITE_EMBD_MODEL;
+  if (!model) {
+    throw new Error("Missing VITE_EMBD_MODEL");
+  }
+
+  const input: ArkMultimodalEmbeddingInput[] = [
+    {
+      type: "text",
+      text: memoryText,
+    },
+  ];
+  const response = await fetch(buildEmbeddingUrl(EMBD_API), {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      encoding_format: "float",
+      dimensions: "2048",
+      input,
+    }),
+  });
+
+  const payload = (await response.json()) as ArkMultimodalEmbeddingResponse;
+  if (!response.ok) {
+    throw new Error(payload.error?.message ?? `Embedding request failed: ${response.status}`);
+  }
+
+  const embedding = payload.data?.embedding;
+  if (!Array.isArray(embedding)) {
+    throw new Error("Embedding response did not include data.embedding");
+  }
+
+  return {
+    vector: Float32Array.from(embedding),
+    content: memoryContent,
+  };
+}
+
 export interface McpTransport {
   callTool: (tool: McpToolCall["tool"], args: Record<string, unknown>) => Promise<unknown>;
 }
@@ -131,6 +241,83 @@ export async function runMcpToolCalls(
     results.push(result);
   }
   return results;
+}
+
+export interface BartenderToolResult {
+  call: McpToolCall;
+  result?: unknown;
+  error?: string;
+}
+
+export interface BartenderConversationResult {
+  initialReply: BartenderReply;
+  finalReply: BartenderReply;
+  toolResults: BartenderToolResult[];
+}
+
+async function runMcpToolCallsDetailed(
+  calls: McpToolCall[],
+  transport: McpTransport,
+): Promise<BartenderToolResult[]> {
+  const results: BartenderToolResult[] = [];
+  for (const call of calls) {
+    try {
+      const result = await transport.callTool(call.tool, call.args);
+      results.push({ call, result });
+    } catch (err) {
+      results.push({
+        call,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  return results;
+}
+
+function buildToolResultPrompt(toolResults: BartenderToolResult[]): string {
+  return [
+    "The requested tools have finished. Use these results to answer the user.",
+    "Return the same strict JSON shape. Do not call the same tool again unless another tool call is truly necessary.",
+    JSON.stringify(
+      toolResults.map(({ call, result, error }) => ({
+        tool: call.tool,
+        args: call.args,
+        result,
+        error,
+      })),
+      null,
+      2,
+    ),
+  ].join("\n\n");
+}
+
+export async function chatWithBartenderAndTools(
+  userInput: string,
+  history: ChatTurn[] = [],
+  transport: McpTransport = createLocalMcpTransport(),
+): Promise<BartenderConversationResult> {
+  const initialReply = await chatWithBartender(userInput, history);
+  if (initialReply.toolCalls.length === 0) {
+    return {
+      initialReply,
+      finalReply: initialReply,
+      toolResults: [],
+    };
+  }
+
+  const toolResults = await runMcpToolCallsDetailed(initialReply.toolCalls, transport);
+  const followUpHistory: ChatTurn[] = [
+    ...history,
+    { role: "user", content: userInput },
+    { role: "assistant", content: JSON.stringify(initialReply) },
+  ];
+  const finalReply = await chatWithBartender(buildToolResultPrompt(toolResults), followUpHistory);
+
+  return {
+    initialReply,
+    finalReply,
+    toolResults,
+  };
 }
 
 const DEFAULT_MCP_DEBUG_BASE =
@@ -203,9 +390,12 @@ export function installDebugMcpEntry(baseUrl = DEFAULT_MCP_DEBUG_BASE): void {
     baseUrl,
     callTool: transport.callTool,
     chatThenRunTools: async (userInput, history = []) => {
-      const reply = await chatWithBartender(userInput, history);
-      const toolResults = await runMcpToolCalls(reply.toolCalls, transport);
-      return { reply, toolResults };
+      const { finalReply, toolResults } = await chatWithBartenderAndTools(
+        userInput,
+        history,
+        transport,
+      );
+      return { reply: finalReply, toolResults };
     },
   };
 }

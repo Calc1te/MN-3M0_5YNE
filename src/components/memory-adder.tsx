@@ -4,7 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 interface AddMemoryResponse {
   id: string;
   text: string;
-  vector: [number, number, number];
+  vector: number[];
 }
 
 export default function MemoryAdder() {

@@ -9,13 +9,13 @@ use lancedb::{
 use serde::{Deserialize, Serialize};
 
 pub const MEMORIES_TABLE: &str = "memories";
-pub const MEMORY_VECTOR_DIMS: usize = 3;
+pub const MEMORY_VECTOR_DIMS: usize = 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryRecord {
     pub id: String,
     pub text: String,
-    pub vector: [f32; MEMORY_VECTOR_DIMS],
+    pub vector: Vec<f32>,
 }
 
 pub async fn connect_vectordb(uri: &str) -> Result<(), String> {
@@ -63,6 +63,13 @@ async fn ensure_memories_table(db: &Connection) -> Result<lancedb::Table, String
 }
 
 fn memory_batch(record: &MemoryRecord) -> Result<RecordBatch, String> {
+    if record.vector.len() != MEMORY_VECTOR_DIMS {
+        return Err(format!(
+            "memory vector must contain exactly {MEMORY_VECTOR_DIMS} values, got {}",
+            record.vector.len()
+        ));
+    }
+
     RecordBatch::try_new(
         memories_schema(),
         vec![

@@ -8,7 +8,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "mcp:dev": "tsx src/mcp/server.ts"
+    "mcp:dev": "tsx src/mcp/server.ts",
+    "mcp:sse": "tsx src/mcp/server.ts --sse"
   },
   "dependencies": {
     "@fontsource-variable/jetbrains-mono": "^5.2.8",

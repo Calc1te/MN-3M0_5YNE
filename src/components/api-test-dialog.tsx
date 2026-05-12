@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { chatWithBartender, type ChatTurn } from "@/api_caller";
+import { chatWithBartenderAndTools, type ChatTurn } from "@/api_caller";
 import { useTranslation } from "react-i18next";
 
 export default function ApiTestDialog() {
@@ -17,13 +17,20 @@ export default function ApiTestDialog() {
     setError(null);
 
     try {
-      const response = await chatWithBartender(input, history);
+      const response = await chatWithBartenderAndTools(input, history);
+      const toolSummary =
+        response.toolResults.length > 0
+          ? `\n\n[tool results]\n${JSON.stringify(response.toolResults, null, 2)}`
+          : "";
 
       // Add user message and assistant response to history
       const newHistory: ChatTurn[] = [
         ...history,
         { role: "user", content: input },
-        { role: "assistant", content: response.assistant },
+        {
+          role: "assistant",
+          content: `${response.finalReply.assistant}${toolSummary}`,
+        },
       ];
       setHistory(newHistory);
       setInput("");
