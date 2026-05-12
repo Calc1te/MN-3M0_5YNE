@@ -10,7 +10,7 @@ export interface ChatTurn {
 }
 
 export interface McpToolCall {
-  tool: "base_list" | "get_base" | "mix_data_drink" | "finalize_drink";
+  tool: "base_list" | "get_base" | "mix_data_drink" | "finalize_drink" | "add_memory";
   args: Record<string, unknown>;
 }
 
@@ -113,6 +113,7 @@ const MCP_ENDPOINTS: Record<McpToolCall["tool"], string> = {
   get_base: "/base/get",
   mix_data_drink: "/mix",
   finalize_drink: "/mix/finalize",
+  add_memory: "/memory/add",
 };
 
 function normalizeToolArgs(

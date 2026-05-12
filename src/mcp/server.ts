@@ -49,13 +49,11 @@ server.registerTool(
   "base_list",
   {
     title: "base_list",
-    description: "Read discarded files list. Uses ~/Desktop by default.",
-    inputSchema: {
-      dir: z.string().optional().describe("Optional override directory path"),
-    },
+    description: "Read discarded files from the user-configured base directory.",
+    inputSchema: {},
   },
-  async ({ dir }) => {
-    const result = await callRust<unknown[]>("/base/list", { dir });
+  async () => {
+    const result = await callRust<unknown[]>("/base/list", {});
     return asTextResult(result);
   },
 );
@@ -64,7 +62,8 @@ server.registerTool(
   "get_base",
   {
     title: "get_base",
-    description: "Get metadata and optional extracted text content for one file.",
+    description:
+      "Get metadata and optional extracted text content for one file. Relative paths are resolved from the user-configured base directory.",
     inputSchema: {
       path: z.string().min(1),
       include_content: z.boolean().optional().default(true),
@@ -77,6 +76,23 @@ server.registerTool(
       include_content,
       max_chars,
     });
+    return asTextResult(result);
+  },
+);
+
+server.registerTool(
+  "add_memory",
+  {
+    title: "add_memory",
+    description: "Add a text memory to the local LanceDB memory table.",
+    inputSchema: {
+      text: z.string().min(1),
+      id: z.string().optional(),
+      vector: z.array(z.number()).length(3).optional(),
+    },
+  },
+  async ({ text, id, vector }) => {
+    const result = await callRust<unknown>("/memory/add", { text, id, vector });
     return asTextResult(result);
   },
 );
@@ -129,7 +145,7 @@ server.registerTool(
 
 server.registerTool("base", {
     title: "base/list",
-    description: "Get list of available Bases.",
+    description: "Get files from the user-configured base directory.",
     inputSchema: {},
   },
   async () => {

@@ -6,6 +6,8 @@ import "./App.css";
 import Menu from "./components/menu.tsx";
 import About from "./components/settings/about.tsx";
 import ApiTestDialog from "./components/api-test-dialog.tsx";
+import DirectorySelector from "./components/directory-selector.tsx";
+import MemoryAdder from "./components/memory-adder.tsx";
 
 function App() {
   const { t, i18n } = useTranslation();
@@ -58,6 +60,9 @@ function App() {
                     </a>
                   </div>
                   <p>{t("ui.hint")}</p>
+
+                  <DirectorySelector />
+                  <MemoryAdder />
 
                   <form
                     className="row"

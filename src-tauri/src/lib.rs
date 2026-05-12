@@ -1,3 +1,5 @@
+pub mod vector_db;
+
 use axum::{
     Json, Router,
     extract::State,
@@ -5,15 +7,20 @@ use axum::{
     routing::{get, post},
 };
 use serde::{Deserialize, Serialize};
+use std::sync::{Mutex, OnceLock};
 use std::{
     env,
     fs::{self, File},
     io::Read,
     path::{Path, PathBuf},
     process::Command,
+    str,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
+
+use chrono::prelude::*;
+use vector_db::lance::{self, MEMORY_VECTOR_DIMS, MemoryRecord};
 
 const DEFAULT_MAX_CHARS: usize = 2000;
 
@@ -30,7 +37,7 @@ struct ApiError {
     error: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Default)]
 struct BaseListRequest {
     dir: Option<String>,
 }
@@ -98,13 +105,34 @@ struct DeleteRequest {
     path: String,
 }
 
+#[derive(Deserialize)]
+struct AddMemoryRequest {
+    text: String,
+    id: Option<String>,
+    vector: Option<Vec<f32>>,
+}
+
+#[derive(Serialize)]
+struct AddMemoryResponse {
+    id: String,
+    text: String,
+    vector: [f32; MEMORY_VECTOR_DIMS],
+}
+
 #[derive(Serialize)]
 struct DeleteResponse {
     deleted: String,
 }
 
-fn desktop_dir() -> PathBuf {
-    return dirs::desktop_dir().unwrap_or(".".into())
+static CURRENT_BASE_DIR: OnceLock<Mutex<PathBuf>> = OnceLock::new();
+
+fn current_base_dir() -> PathBuf {
+    let default_dir = dirs::desktop_dir().unwrap_or(".".into());
+    CURRENT_BASE_DIR
+        .get_or_init(|| Mutex::new(default_dir.clone()))
+        .lock()
+        .unwrap()
+        .clone()
 }
 
 fn bar_root_dir() -> Result<PathBuf, String> {
@@ -114,6 +142,17 @@ fn bar_root_dir() -> Result<PathBuf, String> {
     fs::create_dir_all(&root)
         .map_err(|e| format!("Failed to create bar directory {}: {e}", root.display()))?;
     Ok(root)
+}
+
+fn memory_db_dir() -> Result<PathBuf, String> {
+    let dir = bar_root_dir()?.join("memory.lancedb");
+    fs::create_dir_all(&dir).map_err(|e| {
+        format!(
+            "Failed to create memory DB directory {}: {e}",
+            dir.display()
+        )
+    })?;
+    Ok(dir)
 }
 
 fn build_drink_id() -> String {
@@ -164,8 +203,7 @@ fn extension_lower(path: &Path) -> Option<String> {
 }
 
 fn read_text_file(path: &Path, max_chars: usize) -> Result<String, String> {
-    let file =
-        File::open(path).map_err(|e| format!("Failed to open {}: {e}", path.display()))?;
+    let file = File::open(path).map_err(|e| format!("Failed to open {}: {e}", path.display()))?;
     let mut bytes = Vec::new();
     let limit = (max_chars.saturating_mul(6)).max(4096) as u64;
     file.take(limit)
@@ -215,7 +253,10 @@ fn run_mdls_text(path: &Path, max_chars: usize) -> Result<Option<String>, String
     Ok(Some(trim_to_chars(text, max_chars)))
 }
 
-fn extract_content(path: &Path, max_chars: usize) -> (Option<String>, Option<String>, Option<String>) {
+fn extract_content(
+    path: &Path,
+    max_chars: usize,
+) -> (Option<String>, Option<String>, Option<String>) {
     let is_text_like = matches!(
         extension_lower(path).as_deref(),
         Some(
@@ -299,8 +340,27 @@ fn metadata_to_entry(
     })
 }
 
-fn read_base_list(dir: Option<&str>) -> Result<Vec<BaseEntry>, String> {
-    let target_dir = dir.map(PathBuf::from).unwrap_or_else(desktop_dir);
+fn validate_base_dir(path: &str) -> Result<PathBuf, String> {
+    let pathbuf = PathBuf::from(path);
+
+    let metadata = fs::metadata(&pathbuf)
+        .map_err(|e| format!("Failed to access path {}: {e}", pathbuf.display()))?;
+
+    if !metadata.is_dir() {
+        return Err(format!("{path} is not a directory"));
+    }
+
+    fs::read_dir(&pathbuf)
+        .map_err(|e| format!("Failed to read directory {}: {e}", pathbuf.display()))?;
+
+    Ok(fs::canonicalize(&pathbuf).unwrap_or(pathbuf))
+}
+
+fn read_base_list(dir_override: Option<&str>) -> Result<Vec<BaseEntry>, String> {
+    let target_dir = match dir_override {
+        Some(dir) if !dir.trim().is_empty() => validate_base_dir(dir)?,
+        _ => current_base_dir(),
+    };
     let entries = fs::read_dir(&target_dir)
         .map_err(|e| format!("Failed to read directory {}: {e}", target_dir.display()))?;
 
@@ -311,14 +371,28 @@ fn read_base_list(dir: Option<&str>) -> Result<Vec<BaseEntry>, String> {
         let metadata = entry
             .metadata()
             .map_err(|e| format!("Failed to read metadata for {}: {e}", path.display()))?;
-        out.push(metadata_to_entry(&path, metadata, false, DEFAULT_MAX_CHARS)?);
+        out.push(metadata_to_entry(
+            &path,
+            metadata,
+            false,
+            DEFAULT_MAX_CHARS,
+        )?);
     }
 
     Ok(out)
 }
 
-fn read_base(path: &str, include_content: bool, max_chars: usize) -> Result<BaseEntry, String> {
+fn resolve_base_path(path: &str) -> PathBuf {
     let pathbuf = PathBuf::from(path);
+    if pathbuf.is_absolute() {
+        pathbuf
+    } else {
+        current_base_dir().join(pathbuf)
+    }
+}
+
+fn read_base(path: &str, include_content: bool, max_chars: usize) -> Result<BaseEntry, String> {
+    let pathbuf = resolve_base_path(path);
     let metadata = fs::metadata(&pathbuf)
         .map_err(|e| format!("Failed to read metadata for {}: {e}", pathbuf.display()))?;
     metadata_to_entry(&pathbuf, metadata, include_content, max_chars)
@@ -350,8 +424,12 @@ fn stage_files_for_drink(file_paths: Vec<String>) -> Result<MixDataDrinkResponse
     let session_dir = bar.join(&drink_id);
     let files_dir = session_dir.join("files");
 
-    fs::create_dir_all(&files_dir)
-        .map_err(|e| format!("Failed to create staging directory {}: {e}", files_dir.display()))?;
+    fs::create_dir_all(&files_dir).map_err(|e| {
+        format!(
+            "Failed to create staging directory {}: {e}",
+            files_dir.display()
+        )
+    })?;
 
     let mut staged: Vec<StagedFileRecord> = Vec::new();
     for (idx, src_raw) in file_paths.iter().enumerate() {
@@ -430,8 +508,12 @@ fn finalize_drink_internal(drink_id: &str, action: &str) -> Result<FinalizeDrink
         _ => return Err("action must be either 'drink' or 'restore'".to_string()),
     }
 
-    fs::remove_dir_all(&session_dir)
-        .map_err(|e| format!("Failed to clean staging session {}: {e}", session_dir.display()))?;
+    fs::remove_dir_all(&session_dir).map_err(|e| {
+        format!(
+            "Failed to clean staging session {}: {e}",
+            session_dir.display()
+        )
+    })?;
 
     Ok(FinalizeDrinkResponse {
         drink_id: manifest.drink_id,
@@ -440,13 +522,92 @@ fn finalize_drink_internal(drink_id: &str, action: &str) -> Result<FinalizeDrink
     })
 }
 
+fn change_base_directory_internal(path: String) -> Result<String, String> {
+    let canonical = validate_base_dir(&path)?;
+
+    let base = CURRENT_BASE_DIR.get_or_init(|| Mutex::new(canonical.clone()));
+    *base.lock().unwrap() = canonical.clone();
+
+    Ok(canonical.to_string_lossy().into_owned())
+}
+
+fn normalize_memory_vector(
+    vector: Option<Vec<f32>>,
+    text: &str,
+) -> Result<[f32; MEMORY_VECTOR_DIMS], String> {
+    if let Some(values) = vector {
+        return values
+            .try_into()
+            .map_err(|_| format!("vector must contain exactly {MEMORY_VECTOR_DIMS} numbers"));
+    }
+
+    let char_count = text.chars().count() as f32;
+    let word_count = text.split_whitespace().count() as f32;
+    let checksum = text
+        .bytes()
+        .fold(0u32, |acc, byte| acc.wrapping_add(byte as u32)) as f32
+        / 255.0;
+
+    Ok([char_count, word_count, checksum])
+}
+
+fn build_memory_id() -> String {
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    format!("memory-{}-{}", stamp.as_secs(), stamp.subsec_nanos())
+}
+
+async fn add_memory_internal(
+    text: String,
+    id: Option<String>,
+    vector: Option<Vec<f32>>,
+) -> Result<AddMemoryResponse, String> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return Err("text cannot be empty".to_string());
+    }
+
+    let vector = normalize_memory_vector(vector, trimmed)?;
+    let record = MemoryRecord {
+        id: id
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(build_memory_id),
+        text,
+        vector,
+    };
+    let uri = memory_db_dir()?.to_string_lossy().into_owned();
+    let record = lance::add_memory(&uri, record).await?;
+
+    Ok(AddMemoryResponse {
+        id: record.id,
+        text: record.text,
+        vector: record.vector,
+    })
+}
+
+#[tauri::command]
+fn change_base_directory(path: String) -> Result<String, String> {
+    change_base_directory_internal(path)
+}
+
+#[tauri::command]
+async fn get_time_and_date() -> String {
+    let local: DateTime<Local> = Local::now();
+    local.format("%Y-%m-%d %H:%M:%S").to_string()
+}
+
 #[tauri::command]
 fn base_list(dir: Option<String>) -> Result<Vec<BaseEntry>, String> {
     read_base_list(dir.as_deref())
 }
 
 #[tauri::command]
-fn get_base(path: String, include_content: Option<bool>, max_chars: Option<usize>) -> Result<BaseEntry, String> {
+fn get_base(
+    path: String,
+    include_content: Option<bool>,
+    max_chars: Option<usize>,
+) -> Result<BaseEntry, String> {
     let with_content = include_content.unwrap_or(true);
     let max = max_chars.unwrap_or(DEFAULT_MAX_CHARS).max(1);
     read_base(&path, with_content, max)
@@ -479,6 +640,15 @@ fn finalize_drink(drink_id: String, action: String) -> Result<FinalizeDrinkRespo
 fn permanently_delete_base(path: String) -> Result<DeleteResponse, String> {
     permanently_delete(&path)?;
     Ok(DeleteResponse { deleted: path })
+}
+
+#[tauri::command]
+async fn add_memory(
+    text: String,
+    id: Option<String>,
+    vector: Option<Vec<f32>>,
+) -> Result<AddMemoryResponse, String> {
+    add_memory_internal(text, id, vector).await
 }
 
 async fn health() -> Json<HealthResponse> {
@@ -540,6 +710,16 @@ async fn permanently_delete_handler(
     Ok(Json(DeleteResponse { deleted: req.path }))
 }
 
+async fn add_memory_handler(
+    State(_state): State<Arc<ApiState>>,
+    Json(req): Json<AddMemoryRequest>,
+) -> Result<Json<AddMemoryResponse>, (StatusCode, Json<ApiError>)> {
+    let result = add_memory_internal(req.text, req.id, req.vector)
+        .await
+        .map_err(|error| (StatusCode::BAD_REQUEST, Json(ApiError { error })))?;
+    Ok(Json(result))
+}
+
 async fn start_local_api() -> Result<(), String> {
     let state = Arc::new(ApiState);
     let app = Router::new()
@@ -549,6 +729,8 @@ async fn start_local_api() -> Result<(), String> {
         .route("/mix", post(mix_data_drink_handler))
         .route("/mix/finalize", post(finalize_drink_handler))
         .route("/base/delete", post(permanently_delete_handler))
+        .route("/memory/add", post(add_memory_handler))
+        .route("/time", get(get_time_and_date))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:47821")
@@ -575,7 +757,10 @@ pub fn run() {
             get_base,
             mix_data_drink,
             finalize_drink,
-            permanently_delete_base
+            permanently_delete_base,
+            change_base_directory,
+            add_memory,
+            get_time_and_date
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
