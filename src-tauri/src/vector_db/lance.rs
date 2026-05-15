@@ -85,14 +85,14 @@ fn memory_batch(record: &MemoryRecord) -> Result<RecordBatch, String> {
             ),
         ],
     )
-    .map_err(|e| format!("Failed to build memory batch: {e}"))
+    .map_err(|e| format!("Failed to build memory: {e}"))
 }
 
 pub async fn add_memory(uri: &str, record: MemoryRecord) -> Result<MemoryRecord, String> {
     let db = connect(uri)
         .execute()
         .await
-        .map_err(|e| format!("Failed to connect to vector DB: {e}"))?;
+        .map_err(|e| format!("Failed to connect DB: {e}"))?;
     let table = ensure_memories_table(&db).await?;
     let batch = memory_batch(&record)?;
 

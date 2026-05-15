@@ -32,15 +32,33 @@ enum ModelType {
 }
 
 const BARTENDER_API =
-  import.meta.env.VITE_BARTENDER_URL ?? "https://ark.cn-beijing.volces.com/api/v3";
+  import.meta.env.VITE_BARTENDER_URL;
 
 const EMBD_API =
-  import.meta.env.VITE_EMBD_URL ?? "https://ark.cn-beijing.volces.com/api/v3";
+  import.meta.env.VITE_EMBD_URL;
+
+const CHAT_COMPLETIONS_SUFFIX = "/chat/completions";
+
+function normalizeChatCompletionsBaseUrl(baseUrl?: string): string | undefined {
+  if (!baseUrl) {
+    return undefined;
+  }
+
+  const trimmed = baseUrl.trim().replace(/\/+$/, "");
+  return trimmed.endsWith(CHAT_COMPLETIONS_SUFFIX)
+    ? trimmed.slice(0, -CHAT_COMPLETIONS_SUFFIX.length)
+    : trimmed;
+}
 
 function createOpenAiClient(apiKey: string, model: ModelType): OpenAI {
+  const baseURL =
+    model === ModelType.Bartender
+      ? normalizeChatCompletionsBaseUrl(BARTENDER_API)
+      : normalizeChatCompletionsBaseUrl(BARTENDER_API);
+
   return new OpenAI({
     apiKey,
-    baseURL: model === ModelType.Bartender ? BARTENDER_API : BARTENDER_API,
+    baseURL,
     dangerouslyAllowBrowser: true,
   });
 }
@@ -149,6 +167,10 @@ export async function chatWithBartender(
   userInput: string,
   history: ChatTurn[] = [],
 ): Promise<BartenderReply> {
+  if (!BARTENDER_API) {
+    throw new Error("Missing VITE_BARTENDER_URL");
+  }
+
   const apiKey = import.meta.env.VITE_BARTENDER_LLM_API_KEY;
   if (!apiKey) {
     throw new Error(i18n.t("errors.missingApiKey"));

@@ -87,7 +87,7 @@ export default function ApiTestDialog() {
                     : "bg-secondary/20 text-secondary-foreground/90"
                 }`}
               >
-                <strong>{msg.role}:</strong> {msg.content}
+                <strong>{msg.role === "assistant" ? "P" : msg.role}:</strong> {msg.content}
               </div>
             ))}
           </div>
