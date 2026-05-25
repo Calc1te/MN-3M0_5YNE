@@ -200,7 +200,10 @@ function createServer(): McpServer {
         "Embed and add a text memory to the local LanceDB memory table. Text is stored once; tags are metadata and are also included in the embedding text.",
       inputSchema: {
         text: z.string().min(1),
-        tags: z.unknown().optional().describe("Optional tag string or string array."),
+        tags: z
+          .union([z.string(), z.array(z.string())])
+          .optional()
+          .describe("Optional tag string or string array."),
       },
     },
     async ({ text, tags }) => {

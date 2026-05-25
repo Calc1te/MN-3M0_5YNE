@@ -13,7 +13,13 @@ export interface ChatTurn {
 }
 
 export interface McpToolCall {
-  tool: "base_list" | "get_base" | "mix_data_drink" | "finalize_drink" | "add_memory";
+  tool:
+    | "base_list"
+    | "get_base"
+    | "mix_data_drink"
+    | "finalize_drink"
+    | "add_memory"
+    | "retrieve_memory";
   args: Record<string, unknown>;
 }
 
@@ -374,6 +380,7 @@ const MCP_ENDPOINTS: Record<McpToolCall["tool"], string> = {
   mix_data_drink: "/mix",
   finalize_drink: "/mix/finalize",
   add_memory: "/memory/add",
+  retrieve_memory: "/memory/retrieve",
 };
 
 async function normalizeToolArgs(
@@ -394,6 +401,16 @@ async function normalizeToolArgs(
     return {
       text,
       tags,
+      vector: Array.from(memory.vector),
+    };
+  }
+  if (tool === "retrieve_memory") {
+    const text = typeof args.text === "string" ? args.text.trim() : "";
+    if (!text) {
+      throw new Error("retrieve_memory requires text");
+    }
+    const memory = await createMemoryVector(text, text);
+    return {
       vector: Array.from(memory.vector),
     };
   }
