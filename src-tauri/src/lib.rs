@@ -109,8 +109,13 @@ struct DeleteRequest {
 #[derive(Deserialize)]
 struct AddMemoryRequest {
     text: String,
-    id: Option<String>,
     vector: Option<Vec<f32>>,
+    tags: Option<Vec<String>>,
+}
+
+#[derive(Deserialize)]
+struct RetrieveMemoryRequest {
+    vector: Vec<f32>,
 }
 
 #[derive(Serialize)]
@@ -118,6 +123,9 @@ struct AddMemoryResponse {
     id: String,
     text: String,
     vector: Vec<f32>,
+    tags: Vec<String>,
+    created_at: i64,
+    updated_at: i64,
 }
 
 #[derive(Serialize)]
@@ -576,21 +584,29 @@ fn build_memory_id() -> String {
 
 async fn add_memory_internal(
     text: String,
-    id: Option<String>,
     vector: Option<Vec<f32>>,
+    tags: Option<Vec<String>>,
 ) -> Result<AddMemoryResponse, String> {
     let trimmed = text.trim();
     if trimmed.is_empty() {
         return Err("text cannot be empty".to_string());
     }
+    let tags = tags
+        .unwrap_or_default()
+        .into_iter()
+        .map(|tag| tag.trim().to_string())
+        .filter(|tag| !tag.is_empty())
+        .collect::<Vec<_>>();
 
     let vector = normalize_memory_vector(vector, trimmed)?;
+    let now = Local::now().timestamp();
     let record = MemoryRecord {
-        id: id
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or_else(build_memory_id),
+        id: build_memory_id(),
         text,
         vector,
+        tags,
+        created_at: now,
+        updated_at: now,
     };
     let uri = memory_db_dir()?.to_string_lossy().into_owned();
     let record = lance::add_memory(&uri, record).await?;
@@ -599,6 +615,9 @@ async fn add_memory_internal(
         id: record.id,
         text: record.text,
         vector: record.vector,
+        tags: record.tags,
+        created_at: record.created_at,
+        updated_at: record.updated_at,
     })
 }
 
@@ -661,10 +680,23 @@ fn permanently_delete_base(path: String) -> Result<DeleteResponse, String> {
 #[tauri::command]
 async fn add_memory(
     text: String,
-    id: Option<String>,
     vector: Option<Vec<f32>>,
+    tags: Option<Vec<String>>,
 ) -> Result<AddMemoryResponse, String> {
-    add_memory_internal(text, id, vector).await
+    add_memory_internal(text, vector, tags).await
+}
+
+#[tauri::command]
+async fn retrive_memory(vector: Vec<f32>) -> Result<String, ApiError> {
+    let vector = normalize_memory_vector(Some(vector), "").map_err(|error| ApiError { error })?;
+    let uri = memory_db_dir()
+        .map_err(|error| ApiError { error })?
+        .to_string_lossy()
+        .into_owned();
+    let memories = lance::retrieve_memory_texts(&uri, vector)
+        .await
+        .map_err(|error| ApiError { error })?;
+    Ok(memories.join("\n"))
 }
 
 async fn health() -> Json<HealthResponse> {
@@ -730,10 +762,26 @@ async fn add_memory_handler(
     State(_state): State<Arc<ApiState>>,
     Json(req): Json<AddMemoryRequest>,
 ) -> Result<Json<AddMemoryResponse>, (StatusCode, Json<ApiError>)> {
-    let result = add_memory_internal(req.text, req.id, req.vector)
+    let result = add_memory_internal(req.text, req.vector, req.tags)
         .await
         .map_err(|error| (StatusCode::BAD_REQUEST, Json(ApiError { error })))?;
     Ok(Json(result))
+}
+
+async fn retrieve_memory_handler(
+    State(_state): State<Arc<ApiState>>,
+    Json(req): Json<RetrieveMemoryRequest>,
+) -> Result<Json<Vec<String>>, (StatusCode, Json<ApiError>)> {
+    let vector = normalize_memory_vector(Some(req.vector), "")
+        .map_err(|error| (StatusCode::BAD_REQUEST, Json(ApiError { error })))?;
+    let uri = memory_db_dir()
+        .map_err(|error| (StatusCode::BAD_REQUEST, Json(ApiError { error })))?
+        .to_string_lossy()
+        .into_owned();
+    let memories = lance::retrieve_memory_texts(&uri, vector)
+        .await
+        .map_err(|error| (StatusCode::BAD_REQUEST, Json(ApiError { error })))?;
+    Ok(Json(memories))
 }
 
 async fn start_local_api() -> Result<(), String> {
@@ -746,6 +794,7 @@ async fn start_local_api() -> Result<(), String> {
         .route("/mix/finalize", post(finalize_drink_handler))
         .route("/base/delete", post(permanently_delete_handler))
         .route("/memory/add", post(add_memory_handler))
+        .route("/memory/retrieve", post(retrieve_memory_handler))
         .route("/time", get(get_time_and_date))
         .layer(CorsLayer::permissive())
         .with_state(state);
@@ -777,6 +826,7 @@ pub fn run() {
             permanently_delete_base,
             change_base_directory,
             add_memory,
+            retrive_memory,
             get_time_and_date
         ])
         .run(tauri::generate_context!())

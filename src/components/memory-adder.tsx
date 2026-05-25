@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { createMemoryVector } from "@/api_caller";
 
 interface AddMemoryResponse {
   id: string;
@@ -25,8 +26,10 @@ export default function MemoryAdder() {
     setResult(null);
 
     try {
+      const memory = await createMemoryVector(trimmed, trimmed);
       const saved = await invoke<AddMemoryResponse>("add_memory", {
         text: trimmed,
+        vector: Array.from(memory.vector),
       });
       setResult(saved);
       setText("");

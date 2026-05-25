@@ -202,8 +202,7 @@ export async function createMemoryVector(
   memoryText: string,
   memoryContent: string,
 ): Promise<memoryEntry> {
-  const apiKey =
-    import.meta.env.VITE_BARTENDER_LLM_API_KEY;
+  const apiKey = import.meta.env.VITE_BARTENDER_LLM_API_KEY;
   if (!apiKey) {
     throw new Error(i18n.t("errors.missingApiKey"));
   }
@@ -228,7 +227,7 @@ export async function createMemoryVector(
     body: JSON.stringify({
       model,
       encoding_format: "float",
-      dimensions: "2048",
+      dimensions: "1024",
       input,
     }),
   });
@@ -247,6 +246,30 @@ export async function createMemoryVector(
     vector: Float32Array.from(embedding),
     content: memoryContent,
   };
+}
+
+function normalizeMemoryTags(tags: unknown): string[] {
+  if (Array.isArray(tags)) {
+    return tags.flatMap(normalizeMemoryTags);
+  }
+  if (typeof tags === "string") {
+    return tags
+      .split(",")
+      .map((tag) => tag.trim())
+      .filter(Boolean);
+  }
+  if (tags && typeof tags === "object") {
+    const values = Object.values(tags).flatMap(normalizeMemoryTags);
+    return values.length > 0 ? values : [JSON.stringify(tags)];
+  }
+  return [];
+}
+
+function buildMemoryEmbeddingText(text: string, tags: string[]): string {
+  if (tags.length === 0) {
+    return text;
+  }
+  return `tags: ${tags.join(", ")}\ntext: ${text}`;
 }
 
 export interface McpTransport {
@@ -353,12 +376,26 @@ const MCP_ENDPOINTS: Record<McpToolCall["tool"], string> = {
   add_memory: "/memory/add",
 };
 
-function normalizeToolArgs(
+async function normalizeToolArgs(
   tool: McpToolCall["tool"],
   args: Record<string, unknown>,
-): Record<string, unknown> {
+): Promise<Record<string, unknown>> {
   if (tool === "mix_data_drink" && !("file_paths" in args) && Array.isArray(args.ingredients)) {
     return { ...args, file_paths: args.ingredients };
+  }
+  if (tool === "add_memory") {
+    const text = typeof args.text === "string" ? args.text.trim() : "";
+    if (!text) {
+      throw new Error("add_memory requires text");
+    }
+
+    const tags = normalizeMemoryTags(args.tags);
+    const memory = await createMemoryVector(buildMemoryEmbeddingText(text, tags), text);
+    return {
+      text,
+      tags,
+      vector: Array.from(memory.vector),
+    };
   }
   return args;
 }
@@ -370,7 +407,7 @@ export function createLocalMcpTransport(baseUrl = DEFAULT_MCP_DEBUG_BASE): McpTr
       const response = await fetch(`${baseUrl}${endpoint}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(normalizeToolArgs(tool, args)),
+        body: JSON.stringify(await normalizeToolArgs(tool, args)),
       });
 
       const text = await response.text();

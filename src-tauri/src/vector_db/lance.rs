@@ -1,10 +1,14 @@
 use std::sync::Arc;
 
-use arrow_array::{FixedSizeListArray, LargeStringArray, RecordBatch, types::Float32Type};
+use arrow_array::{
+    Array, FixedSizeListArray, Int64Array, LargeStringArray, RecordBatch, types::Float32Type,
+};
+use futures::TryStreamExt;
 use lancedb::{
     arrow::arrow_schema::{DataType, Field, Schema},
     connect,
     connection::Connection,
+    query::{ExecutableQuery, QueryBase, Select},
 };
 use serde::{Deserialize, Serialize};
 
@@ -16,6 +20,9 @@ pub struct MemoryRecord {
     pub id: String,
     pub text: String,
     pub vector: Vec<f32>,
+    pub tags: Vec<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
 }
 
 pub async fn connect_vectordb(uri: &str) -> Result<(), String> {
@@ -30,6 +37,9 @@ fn memories_schema() -> Arc<Schema> {
     Arc::new(Schema::new(vec![
         Field::new("id", DataType::LargeUtf8, false),
         Field::new("text", DataType::LargeUtf8, false),
+        Field::new("tags", DataType::LargeUtf8, false),
+        Field::new("created_at", DataType::Int64, false),
+        Field::new("updated_at", DataType::Int64, false),
         Field::new(
             "vector",
             DataType::FixedSizeList(
@@ -69,12 +79,17 @@ fn memory_batch(record: &MemoryRecord) -> Result<RecordBatch, String> {
             record.vector.len()
         ));
     }
+    let tags_json = serde_json::to_string(&record.tags)
+        .map_err(|e| format!("Failed to serialize memory tags: {e}"))?;
 
     RecordBatch::try_new(
         memories_schema(),
         vec![
             Arc::new(LargeStringArray::from(vec![record.id.as_str()])),
             Arc::new(LargeStringArray::from(vec![record.text.as_str()])),
+            Arc::new(LargeStringArray::from(vec![tags_json.as_str()])),
+            Arc::new(Int64Array::from(vec![record.created_at])),
+            Arc::new(Int64Array::from(vec![record.updated_at])),
             Arc::new(
                 FixedSizeListArray::from_iter_primitive::<Float32Type, _, _>(
                     [Some(
@@ -103,4 +118,45 @@ pub async fn add_memory(uri: &str, record: MemoryRecord) -> Result<MemoryRecord,
         .map_err(|e| format!("Failed to add memory: {e}"))?;
 
     Ok(record)
+}
+
+pub async fn retrieve_memory_texts(uri: &str, vector: Vec<f32>) -> Result<Vec<String>, String> {
+    let db = connect(uri)
+        .execute()
+        .await
+        .map_err(|e| format!("Failed to connect DB: {e}"))?;
+    let table = ensure_memories_table(&db).await?;
+    let stream = table
+        .query()
+        .nearest_to(vector)
+        .map_err(|e| format!("Failed to build memory query: {e}"))?
+        .select(Select::columns(&["text"]))
+        .execute()
+        .await
+        .map_err(|e| format!("Failed to query memory: {e}"))?;
+    let batches: Vec<RecordBatch> = stream
+        .try_collect()
+        .await
+        .map_err(|e| format!("Failed to read memory results: {e}"))?;
+
+    let mut results = Vec::new();
+    for batch in batches {
+        let text_index = batch
+            .schema()
+            .index_of("text")
+            .map_err(|e| format!("Memory query missing text column: {e}"))?;
+        let texts = batch
+            .column(text_index)
+            .as_any()
+            .downcast_ref::<LargeStringArray>()
+            .ok_or_else(|| "Memory query returned non-text column".to_string())?;
+        for row in 0..batch.num_rows() {
+            if texts.is_null(row) {
+                return Err(format!("Memory result text at row {row} is null"));
+            }
+            results.push(texts.value(row).to_string());
+        }
+    }
+
+    Ok(results)
 }
