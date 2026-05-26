@@ -6,7 +6,8 @@ use axum::{
     http::StatusCode,
     routing::{get, post},
 };
-use serde::{Deserialize, Serialize};
+use serde::de::Error as SerdeError;
+use serde::{Deserialize, Deserializer, Serialize};
 use std::sync::{Mutex, OnceLock};
 use std::{
     env,
@@ -153,6 +154,108 @@ fn bar_root_dir() -> Result<PathBuf, String> {
     Ok(root)
 }
 
+fn shaker_root_dir() -> Result<PathBuf, String> {
+    let root = bar_root_dir()?.join("shaker");
+    fs::create_dir_all(&root)
+        .map_err(|e| format!("Failed to create shaker directory {}: {e}", root.display()))?;
+    Ok(root)
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct BarConfig {
+    #[serde(rename = "Name", default = "default_user_name")]
+    name: String,
+    #[serde(rename = "Last_Activated", default)]
+    last_activated: i64,
+    #[serde(
+        rename = "Bar_Path",
+        default,
+        deserialize_with = "deserialize_bar_path"
+    )]
+    bar_path: String,
+}
+
+fn default_user_name() -> String {
+    "User".to_string()
+}
+
+impl Default for BarConfig {
+    fn default() -> Self {
+        Self {
+            name: default_user_name(),
+            last_activated: 0,
+            bar_path: String::new(),
+        }
+    }
+}
+
+fn deserialize_bar_path<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    match value {
+        serde_json::Value::String(value) => Ok(value),
+        serde_json::Value::Number(_) | serde_json::Value::Null => Ok(String::new()),
+        _ => Err(SerdeError::custom("Bar_Path must be a string")),
+    }
+}
+
+fn config_path() -> Result<PathBuf, String> {
+    Ok(bar_root_dir()?.join("configs.json"))
+}
+
+fn read_config() -> Result<BarConfig, String> {
+    let path = config_path()?;
+    if !path.exists() {
+        return Ok(BarConfig::default());
+    }
+    let bytes =
+        fs::read(&path).map_err(|e| format!("Failed to read config {}: {e}", path.display()))?;
+    serde_json::from_slice(&bytes)
+        .map_err(|e| format!("Failed to parse config {}: {e}", path.display()))
+}
+
+fn write_config(config: &BarConfig) -> Result<(), String> {
+    let path = config_path()?;
+    let bytes = serde_json::to_vec_pretty(config)
+        .map_err(|e| format!("Failed to serialize config {}: {e}", path.display()))?;
+    fs::write(&path, bytes)
+        .map_err(|e| format!("Failed to write config {}: {e}", path.display()))
+}
+
+fn update_config<F>(mutator: F) -> Result<BarConfig, String>
+where
+    F: FnOnce(BarConfig) -> Result<BarConfig, String>,
+{
+    let current = read_config()?;
+    let updated = mutator(current)?;
+    write_config(&updated)?;
+    Ok(updated)
+}
+
+fn touch_last_activated() -> Result<BarConfig, String> {
+    update_config(|mut config| {
+        config.last_activated = Local::now().timestamp();
+        if config.bar_path.trim().is_empty() {
+            config.bar_path = current_base_dir().to_string_lossy().into_owned();
+        }
+        Ok(config)
+    })
+}
+
+fn set_user_name_internal(name: String) -> Result<String, String> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err("name cannot be empty".to_string());
+    }
+    let config = update_config(|mut config| {
+        config.name = trimmed.to_string();
+        Ok(config)
+    })?;
+    Ok(config.name)
+}
+
 fn memory_db_dir() -> Result<PathBuf, String> {
     let dir = bar_root_dir()?.join("memory.lancedb");
     fs::create_dir_all(&dir).map_err(|e| {
@@ -188,8 +291,8 @@ fn write_manifest(dir: &Path, manifest: &DrinkManifest) -> Result<(), String> {
 }
 
 fn read_manifest(drink_id: &str) -> Result<(PathBuf, DrinkManifest), String> {
-    let bar = bar_root_dir()?;
-    let session_dir = bar.join(drink_id);
+    let shaker = shaker_root_dir()?;
+    let session_dir = shaker.join(drink_id);
     let manifest_path = session_dir.join("manifest.json");
     let bytes = fs::read(&manifest_path)
         .map_err(|e| format!("Failed to read {}: {e}", manifest_path.display()))?;
@@ -438,7 +541,7 @@ fn stage_files_for_drink(file_paths: Vec<String>) -> Result<MixDataDrinkResponse
         return Err("file_paths cannot be empty".to_string());
     }
 
-    let bar = bar_root_dir()?;
+    let bar = shaker_root_dir()?;
     let drink_id = build_drink_id();
     let session_dir = bar.join(&drink_id);
     let files_dir = session_dir.join("files");
@@ -544,6 +647,11 @@ fn finalize_drink_internal(drink_id: &str, action: &str) -> Result<FinalizeDrink
 fn change_base_directory_internal(path: String) -> Result<String, String> {
     let canonical = validate_base_dir(&path)?;
 
+    update_config(|mut config| {
+        config.bar_path = canonical.to_string_lossy().into_owned();
+        Ok(config)
+    })?;
+
     let base = CURRENT_BASE_DIR.get_or_init(|| Mutex::new(canonical.clone()));
     *base.lock().unwrap() = canonical.clone();
 
@@ -624,6 +732,11 @@ async fn add_memory_internal(
 #[tauri::command]
 fn change_base_directory(path: String) -> Result<String, String> {
     change_base_directory_internal(path)
+}
+
+#[tauri::command]
+fn set_user_name(name: String) -> Result<String, String> {
+    set_user_name_internal(name)
 }
 
 #[tauri::command]
@@ -810,6 +923,10 @@ async fn start_local_api() -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    if let Err(error) = touch_last_activated() {
+        eprintln!("{error}");
+    }
+
     tauri::async_runtime::spawn(async move {
         if let Err(error) = start_local_api().await {
             eprintln!("{error}");
@@ -825,6 +942,7 @@ pub fn run() {
             finalize_drink,
             permanently_delete_base,
             change_base_directory,
+            set_user_name,
             add_memory,
             retrive_memory,
             get_time_and_date

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { saveUserName } from "@/lib/utils";
 import "./App.css";
 import Menu from "./components/menu.tsx";
 import About from "./components/settings/about.tsx";
@@ -16,6 +17,14 @@ function App() {
 
   async function greet() {
     // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+    const trimmed = name.trim();
+    if (trimmed) {
+      try {
+        await saveUserName(trimmed);
+      } catch (error) {
+        console.error("Failed to save user name:", error);
+      }
+    }
     setGreetMsg(await invoke("greet", { name }));
   }
 
