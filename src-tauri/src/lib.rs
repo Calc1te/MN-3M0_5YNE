@@ -135,6 +135,7 @@ struct DeleteResponse {
 }
 
 static CURRENT_BASE_DIR: OnceLock<Mutex<PathBuf>> = OnceLock::new();
+static STARTUP_CONTEXT: OnceLock<BarConfig> = OnceLock::new();
 
 fn current_base_dir() -> PathBuf {
     let default_dir = dirs::desktop_dir().unwrap_or(".".into());
@@ -234,14 +235,23 @@ where
     Ok(updated)
 }
 
-fn touch_last_activated() -> Result<BarConfig, String> {
-    update_config(|mut config| {
-        config.last_activated = Local::now().timestamp();
-        if config.bar_path.trim().is_empty() {
-            config.bar_path = current_base_dir().to_string_lossy().into_owned();
-        }
-        Ok(config)
-    })
+fn initialize_startup_context() -> Result<BarConfig, String> {
+    let mut config = read_config()?;
+    let previous_last = config.last_activated;
+    if config.bar_path.trim().is_empty() {
+        config.bar_path = current_base_dir().to_string_lossy().into_owned();
+    }
+
+    let updated = BarConfig {
+        last_activated: Local::now().timestamp(),
+        ..config.clone()
+    };
+    write_config(&updated)?;
+
+    let mut context = updated;
+    context.last_activated = previous_last;
+    let _ = STARTUP_CONTEXT.set(context.clone());
+    Ok(context)
 }
 
 fn set_user_name_internal(name: String) -> Result<String, String> {
@@ -740,6 +750,14 @@ fn set_user_name(name: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+fn get_startup_context() -> Result<BarConfig, String> {
+    if let Some(context) = STARTUP_CONTEXT.get() {
+        return Ok(context.clone());
+    }
+    initialize_startup_context()
+}
+
+#[tauri::command]
 async fn get_time_and_date() -> String {
     let local: DateTime<Local> = Local::now();
     local.format("%Y-%m-%d %H:%M:%S").to_string()
@@ -923,7 +941,7 @@ async fn start_local_api() -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    if let Err(error) = touch_last_activated() {
+    if let Err(error) = initialize_startup_context() {
         eprintln!("{error}");
     }
 
@@ -943,6 +961,7 @@ pub fn run() {
             permanently_delete_base,
             change_base_directory,
             set_user_name,
+            get_startup_context,
             add_memory,
             retrive_memory,
             get_time_and_date

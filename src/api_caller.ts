@@ -3,6 +3,7 @@ import type {
   ChatCompletionCreateParamsNonStreaming,
   ChatCompletionMessageParam,
 } from "openai/resources/chat/completions/completions";
+import { invoke } from "@tauri-apps/api/core";
 import i18n, { getCurrentLanguage } from "./i18n";
 
 export type Role = "user" | "assistant" | "system";
@@ -108,14 +109,58 @@ function getSystemPrompt(): string {
   return i18n.getFixedT(language)("prompts.system");
 }
 
-function toChatMessages(history: ChatTurn[], userInput: string): ChatCompletionMessageParam[] {
+interface StartupContext {
+  Name?: string;
+  Last_Activated?: number;
+  Bar_Path?: string;
+}
+
+async function buildStartupLine(): Promise<string> {
+  try {
+    const language = getCurrentLanguage();
+    const t = i18n.getFixedT(language);
+    const context = await invoke<StartupContext>("get_startup_context");
+    const lastActivated =
+      typeof context.Last_Activated === "number" ? context.Last_Activated : 0;
+    const userName =
+      typeof context.Name === "string" && context.Name.trim()
+        ? context.Name.trim()
+        : "User";
+
+    if (lastActivated === 0) {
+      return t("prompts.startup.first");
+    }
+
+    const nowSecs = Math.floor(Date.now() / 1000);
+    const days = Math.floor(Math.max(0, nowSecs - lastActivated) / 86400);
+    if (days < 7) {
+      return "";
+    }
+
+    return t("prompts.startup.stale", { user: userName, days });
+  } catch (error) {
+    console.warn("Failed to load startup context:", error);
+    return "";
+  }
+}
+
+async function getSystemPromptWithContext(): Promise<string> {
+  const base = getSystemPrompt();
+  const extra = await buildStartupLine();
+  return extra ? `${base}\n\n${extra}` : base;
+}
+
+async function toChatMessages(
+  history: ChatTurn[],
+  userInput: string,
+): Promise<ChatCompletionMessageParam[]> {
   const historyMessages: ChatCompletionMessageParam[] = history.map((m) => ({
     role: m.role,
     content: m.content,
   }));
 
   return [
-    { role: "system", content: getSystemPrompt() },
+    { role: "system", content: await getSystemPromptWithContext() },
     ...historyMessages,
     { role: "user", content: userInput },
   ];
@@ -191,7 +236,7 @@ export async function chatWithBartender(
   const request: ChatCompletionCreateParamsNonStreaming = {
     model,
     temperature: 0.7,
-    messages: toChatMessages(history, userInput),
+    messages: await toChatMessages(history, userInput),
   };
 
   const completion = await openai.chat.completions.create(request);
