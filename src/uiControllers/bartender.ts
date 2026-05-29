@@ -25,9 +25,8 @@ export function onBartenderStateChange(
 
 export function normalizeBartenderState(value: string): BartenderState {
   const trimmed = value.trim().toLowerCase();
-  const normalized = trimmed === "smoling" ? "smoking" : trimmed;
-  if (isBartenderState(normalized)) {
-    return normalized;
+  if (isBartenderState(trimmed)) {
+    return trimmed;
   }
   throw new Error(
     `Unknown bartender state: ${value}. Expected one of ${BARTENDER_STATES.join(", ")}.`,

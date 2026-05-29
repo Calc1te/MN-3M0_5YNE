@@ -9,6 +9,10 @@
     "tauriLogoAlt": "Tauri 图标",
     "about": "关于"
   },
+  "utils":{
+    "send": "送信",
+    "sending": "理解中"
+  },
   "menu": {
     "trigger": "右键菜单",
     "settings": "设置",

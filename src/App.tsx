@@ -1,32 +1,13 @@
-import { useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
-import { saveUserName } from "@/lib/utils";
 import "./App.css";
-import Menu from "./components/menu.tsx";
+import Menu from "./components/views/menu.tsx";
 import About from "./components/settings/about.tsx";
-import ApiTestDialog from "./components/api-test-dialog.tsx";
-import DirectorySelector from "./components/directory-selector.tsx";
-import MemoryAdder from "./components/memory-adder.tsx";
+import BartenderMain from "./components/views/bartender_main.tsx";
+import DebugMenu from "./components/debug.tsx";
 
 function App() {
   const { t, i18n } = useTranslation();
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
-
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    const trimmed = name.trim();
-    if (trimmed) {
-      try {
-        await saveUserName(trimmed);
-      } catch (error) {
-        console.error("Failed to save user name:", error);
-      }
-    }
-    setGreetMsg(await invoke("greet", { name }));
-  }
 
   return (
     <Router>
@@ -51,43 +32,8 @@ function App() {
                       <option value="zh-CN">中文</option>
                     </select>
                   </label>
-
-                  <div className="row">
-                    <a href="https://vite.dev" target="_blank">
-                      <img
-                        src="/vite.svg"
-                        className="logo vite"
-                        alt={t("ui.viteLogoAlt")}
-                      />
-                    </a>
-                    <a href="https://tauri.app" target="_blank">
-                      <img
-                        src="/tauri.svg"
-                        className="logo tauri"
-                        alt={t("ui.tauriLogoAlt")}
-                      />
-                    </a>
-                  </div>
-                  <p>{t("ui.hint")}</p>
-
-                  <DirectorySelector />
-                  <MemoryAdder />
-
-                  <form
-                    className="row"
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      greet();
-                    }}
-                  >
-                    <input
-                      id="greet-input"
-                      onChange={(e) => setName(e.currentTarget.value)}
-                      placeholder={t("ui.inputPlaceholder")}
-                    />
-                    <button type="submit">{t("ui.greet")}</button>
-                  </form>
-                  <p>{greetMsg}</p>
+                  <BartenderMain />
+                  <DebugMenu />
                 </main>
               }
             />
@@ -95,7 +41,6 @@ function App() {
           </Routes>
         </div>
       </Menu>
-      <ApiTestDialog />
     </Router>
   );
 }

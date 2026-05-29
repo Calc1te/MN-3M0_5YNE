@@ -1,18 +1,19 @@
 {
   "ui": {
-    "title": "Welcome to Tauri + React",
-    "hint": "Click on the Tauri, Vite, and React logos to learn more.",
-    "inputPlaceholder": "Enter a name...",
+    "title": "B4-rt 3n-der",
+    "inputPlaceholder": "Enter something",
     "greet": "Greet",
     "language": "Language",
-    "viteLogoAlt": "Vite logo",
-    "tauriLogoAlt": "Tauri logo",
     "about": "This is about page"
   },
   "menu": {
     "trigger": "Right click",
     "settings": "Settings",
     "about": "About"
+  },
+  "utils":{
+    "send": "send",
+    "sending": "thinking"
   },
   "errors": {
     "missingApiKey": "Missing VITE_ARK_API_KEY",
