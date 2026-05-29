@@ -20,7 +20,8 @@ export interface McpToolCall {
     | "mix_data_drink"
     | "finalize_drink"
     | "add_memory"
-    | "retrieve_memory";
+    | "retrieve_memory"
+    | "change_state";
   args: Record<string, unknown>;
 }
 
@@ -426,6 +427,7 @@ const MCP_ENDPOINTS: Record<McpToolCall["tool"], string> = {
   finalize_drink: "/mix/finalize",
   add_memory: "/memory/add",
   retrieve_memory: "/memory/retrieve",
+  change_state: "/state"
 };
 
 async function normalizeToolArgs(

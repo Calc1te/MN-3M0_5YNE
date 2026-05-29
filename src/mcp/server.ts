@@ -4,6 +4,7 @@ import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import "dotenv/config";
+import { changeBartenderState } from "../uiControllers/bartender";
 
 const RUST_API_BASE = process.env.DATA_BARTENDER_API ?? "http://127.0.0.1:47821";
 const MCP_SSE_PORT = Number(process.env.MCP_SSE_PORT ?? 47822);
@@ -286,6 +287,21 @@ function createServer(): McpServer {
       return asTextResult(result);
     },
   );
+
+  server.registerTool(
+    "change_state",
+    {
+      title: "change sprite state",
+      description: "Change the sprite of the bartender. Available states: idle/shaking/smoking/griefing",
+      inputSchema: {
+        state: z.string().min(1),
+      },
+    },
+    async ({ state }) => {
+      const nextState = changeBartenderState(state);
+      return asTextResult({ ok: true, state: nextState });
+    },
+  )
 
 
   return server;
