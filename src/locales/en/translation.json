@@ -4,6 +4,15 @@
     "inputPlaceholder": "Enter something",
     "greet": "Greet",
     "language": "Language",
+    "back": "Back",
+    "toolCalling": "P is rummaging through the file pile...",
+    "directorySelector": "Base Directory",
+    "directoryPlaceholder": "Enter directory path...",
+    "directoryChange": "Change",
+    "directoryChanging": "Changing...",
+    "directoryRequired": "Please enter a directory path",
+    "directoryChanged": "Directory changed to",
+    "currentPath": "Current Path",
     "about": "This is about page"
   },
   "menu": {

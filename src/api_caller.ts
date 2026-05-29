@@ -352,7 +352,7 @@ export interface BartenderConversationResult {
   toolResults: BartenderToolResult[];
 }
 
-async function runMcpToolCallsDetailed(
+export async function runMcpToolCallsDetailed(
   calls: McpToolCall[],
   transport: McpTransport,
 ): Promise<BartenderToolResult[]> {
@@ -371,14 +371,39 @@ async function runMcpToolCallsDetailed(
   return results;
 }
 
-function buildToolResultPrompt(toolResults: BartenderToolResult[]): string {
+export function buildToolResultPrompt(toolResults: BartenderToolResult[]): string {
+  const hasBaseList = toolResults.some(({ call }) => call.tool === "base_list");
+  const baseListGuidance =
+    getCurrentLanguage() === "zh-CN"
+      ? [
+          "base_list 展示规则：",
+          "你绝对不该把返回的文件逐项完整列出来。",
+          "只挑 2-5 个最有趣、最可疑、最适合调酒的文件，加以短评。",
+          "如果需要更多细节，应调用 get_base，而不是把目录清单倒给用户。",
+          "保持酒保 P 的毒舌、挑剔和审美，不要像文件管理器。",
+        ].join("\n")
+      : [
+          "base_list presentation rule:",
+          "Do not enumerate every returned file.",
+          "Pick only 2-5 interesting, suspicious, or drink-worthy files and comment on them briefly.",
+          "If more detail is needed, call get_base instead of dumping the directory list.",
+          "Stay sharp, selective, and in-character as bartender P. Do not sound like a file manager.",
+        ].join("\n");
+
   return [
     "The requested tools have finished. Use these results to answer the user.",
     "Return the same strict JSON shape. Do not call the same tool again unless another tool call is truly necessary.",
+    ...(hasBaseList ? [baseListGuidance] : []),
     JSON.stringify(
       toolResults.map(({ call, result, error }) => ({
         tool: call.tool,
         args: call.args,
+        ...(call.tool === "base_list"
+          ? {
+              presentation_note:
+                "Do not list all files. Select a few interesting candidates and comment on them in-character.",
+            }
+          : {}),
         result,
         error,
       })),

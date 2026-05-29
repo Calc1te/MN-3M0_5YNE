@@ -1,8 +1,11 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
-  chatWithBartenderAndTools,
+  buildToolResultPrompt,
+  chatWithBartender,
+  createLocalMcpTransport,
+  runMcpToolCallsDetailed,
   type BartenderToolResult,
   type ChatTurn,
 } from "@/api_caller";
@@ -20,13 +23,9 @@ export default function BartenderMain() {
   const [input, setInput] = useState("");
   const [history, setHistory] = useState<ChatTurn[]>([]);
   const [reply, setReply] = useState("");
+  const [toolStatus, setToolStatus] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const replyPlaceholder = useMemo(
-    () => t("ui.noMessages") || "No messages yet",
-    [t],
-  );
 
   const applyToolStateChanges = (toolResults: BartenderToolResult[]) => {
     for (const { call, result } of toolResults) {
@@ -65,22 +64,53 @@ export default function BartenderMain() {
 
     setIsLoading(true);
     setError(null);
+    setToolStatus("");
 
     try {
-      const response = await chatWithBartenderAndTools(trimmed, history);
-      applyToolStateChanges(response.toolResults);
+      const response = await chatWithBartender(trimmed, history);
+      const hasToolCalls = response.toolCalls.length > 0;
+
+      setReply(response.assistant);
+      setInput("");
+
+      if (hasToolCalls) {
+        setToolStatus(t("ui.toolCalling") || "P is rummaging through the file pile...");
+        const toolResults = await runMcpToolCallsDetailed(
+          response.toolCalls,
+          createLocalMcpTransport(),
+        );
+        applyToolStateChanges(toolResults);
+
+        const followUpHistory: ChatTurn[] = [
+          ...history,
+          { role: "user", content: trimmed },
+          { role: "assistant", content: JSON.stringify(response) },
+        ];
+        const finalReply = await chatWithBartender(
+          buildToolResultPrompt(toolResults),
+          followUpHistory,
+        );
+
+        setToolStatus("");
+        setReply(finalReply.assistant);
+
+        setHistory([
+          ...history,
+          { role: "user", content: trimmed },
+          { role: "assistant", content: finalReply.assistant },
+        ]);
+        return;
+      }
 
       const newHistory: ChatTurn[] = [
         ...history,
         { role: "user", content: trimmed },
         {
           role: "assistant",
-          content: response.finalReply.assistant,
+          content: response.assistant,
         },
       ];
       setHistory(newHistory);
-      setReply(response.finalReply.assistant);
-      setInput("");
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : "Unknown error occurred";
@@ -95,25 +125,38 @@ export default function BartenderMain() {
     setHistory([]);
     setInput("");
     setReply("");
+    setToolStatus("");
     setError(null);
   };
 
   return (
     <section
       className={cn(
-        "w-full max-w-3xl ml-auto flex flex-col items-end gap-4",
+        "w-full max-w-3xl ml-auto flex flex-col items-end gap-4 text-background",
         isZh && "font-ui-cn",
       )}
     >
-            <PDialog
+      <PDialog
         value={reply}
-        placeholder={replyPlaceholder}
         readOnly
         font="normal"
         rows={6}
-        containerClassName="w-full max-w-2xl"
-              className={cn("w-full", chatFontClass)}
+        containerClassName="w-3/5 max-w-2xl"
+        className={cn(
+          "w-full bg-foreground text-background placeholder:text-background/60",
+          chatFontClass,
+        )}
       />
+      {toolStatus && (
+        <div
+          className={cn(
+            "w-full max-w-2xl text-right text-xs text-foreground/70",
+            chatFontClass,
+          )}
+        >
+          {toolStatus}
+        </div>
+      )}
       <PSprite className="p-sprite-container" />
 
 
@@ -123,21 +166,22 @@ export default function BartenderMain() {
         </div>
       )}
 
-      <div className="flex w-full max-w-2xl gap-2 items-start justify-end">
-        <UserInput
-          value={input}
-          onChange={setInput}
-          onSubmit={() => void handleSendMessage()}
-          placeholder={t("ui.inputPlaceholder") || "Enter message..."}
-          disabled={isLoading}
-          buttonLabel={isLoading ? t("utils.sending") : t("utils.send")}
-          buttonClassName="w-20 h-8 text-white"
-          className="flex-1"
-          inputClassName={chatFontClass}
-          inputProps={{ font: "normal" }}
-          buttonProps={isZh ? { font: "normal" } : undefined}
-        />
-      </div>
+      <UserInput
+        value={input}
+        onChange={setInput}
+        onSubmit={() => void handleSendMessage()}
+        placeholder={t("ui.inputPlaceholder") || "Enter message..."}
+        disabled={isLoading}
+        buttonLabel={isLoading ? t("utils.sending") : t("utils.send")}
+        buttonClassName="w-20 h-8 text-white"
+        className="ml-auto w-full max-w-2xl justify-end"
+        inputClassName={cn(
+          "bg-foreground text-background placeholder:text-background/60",
+          chatFontClass,
+        )}
+        inputProps={{ font: "normal" }}
+        buttonProps={isZh ? { font: "normal" } : undefined}
+      />
       <div className="flex w-full max-w-2xl justify-end">
         <button
           onClick={handleClearHistory}

@@ -1,6 +1,5 @@
 import { useTranslation } from "react-i18next";
 
-import DirectorySelector from "@/components/directory-selector";
 import MemoryAdder from "@/components/memory-adder";
 import { cn } from "@/lib/utils";
 
@@ -20,7 +19,6 @@ export default function DebugMenu() {
         {t("ui.debug") || "Debug"}
       </summary>
       <div className="mt-4 flex flex-col gap-4">
-        <DirectorySelector />
         <MemoryAdder />
       </div>
     </details>

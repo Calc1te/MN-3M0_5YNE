@@ -2,6 +2,10 @@ import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
 
+import { Button } from "@/components/ui/8bit/button";
+import { Input } from "@/components/ui/8bit/input";
+import { cn } from "@/lib/utils";
+
 export default function DirectorySelector() {
   const { t } = useTranslation();
   const [inputPath, setInputPath] = useState<string>("");
@@ -12,7 +16,7 @@ export default function DirectorySelector() {
 
   const handleChangeDirectory = async () => {
     if (!inputPath.trim()) {
-      setError("Please enter a directory path");
+      setError(t("ui.directoryRequired") || "Please enter a directory path");
       return;
     }
 
@@ -28,7 +32,7 @@ export default function DirectorySelector() {
 
       setCurrentPath(result);
       setInputPath("");
-      setSuccess(`Directory changed to: ${result}`);
+      setSuccess(`${t("ui.directoryChanged") || "Directory changed to"}: ${result}`);
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : "Unknown error occurred";
@@ -40,51 +44,55 @@ export default function DirectorySelector() {
   };
 
   return (
-    <div className="p-4 border border-border rounded-lg bg-card">
-      <h3 className="font-semibold mb-4">
+    <section className="flex w-full max-w-xl flex-col gap-3">
+      <span className="text-sm">
         {t("ui.directorySelector") || "Directory Selector"}
-      </h3>
+      </span>
 
       {currentPath && (
-        <div className="mb-4 p-2 bg-secondary/20 text-secondary-foreground rounded text-sm">
-          <strong>Current Path:</strong> {currentPath}
+        <div className="text-xs text-foreground/70">
+          {t("ui.currentPath") || "Current Path"}: {currentPath}
         </div>
       )}
 
       {error && (
-        <div className="mb-4 p-2 bg-destructive/20 text-destructive rounded text-sm">
+        <div className="text-xs text-destructive">
           {error}
         </div>
       )}
 
       {success && (
-        <div className="mb-4 p-2 bg-primary/20 text-primary-foreground rounded text-sm">
+        <div className="text-xs text-foreground/70">
           {success}
         </div>
       )}
 
-      <div className="flex gap-2 mb-4">
-        <input
+      <div className="flex w-full items-center gap-3">
+        <Input
           type="text"
           value={inputPath}
           onChange={(e) => setInputPath(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !isLoading) {
-              handleChangeDirectory();
+              void handleChangeDirectory();
             }
           }}
-          placeholder="Enter directory path..."
+          placeholder={t("ui.directoryPlaceholder") || "Enter directory path..."}
           disabled={isLoading}
-          className="flex-1 px-3 py-2 border border-border rounded bg-background text-foreground placeholder:text-muted-foreground"
+          font="normal"
+          className="min-w-0 flex-1 bg-foreground text-background placeholder:text-background/60"
         />
-        <button
+        <Button
           onClick={handleChangeDirectory}
           disabled={isLoading || !inputPath.trim()}
-          className="px-4 py-2 bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50"
+          font="normal"
+          className={cn("h-9 shrink-0 px-4 text-background", isLoading && "opacity-70")}
         >
-          {isLoading ? "Changing..." : "Change"}
-        </button>
+          {isLoading
+            ? t("ui.directoryChanging") || "Changing..."
+            : t("ui.directoryChange") || "Change"}
+        </Button>
       </div>
-    </div>
+    </section>
   );
 }

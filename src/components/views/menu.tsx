@@ -17,7 +17,7 @@ export default function Menu({ children }: MenuProps) {
   const navigate = useNavigate();
 
   const handleSetting = () => {
-    console.log("to setting");
+    navigate("/settings");
   };
   const handleAbout = () => {
     navigate("/about");

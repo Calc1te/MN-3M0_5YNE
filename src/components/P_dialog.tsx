@@ -15,6 +15,10 @@ readOnly = true,
 className,
 ...props
 }: PDialogProps) {
+if (!value.trim()) {
+    return null;
+}
+
 return (
     <div className={cn("flex flex-col gap-2", containerClassName)}>
     {label ? (
