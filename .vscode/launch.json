@@ -1,0 +1,62 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Tauri Dev (Debug)",
+      "cargo": {
+        "args": ["build", "--manifest-path=./src-tauri/Cargo.toml", "--no-default-features"],
+        "filter": {
+          "name": "B4-rt_3n-der",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "ui-dev-server"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Tauri Dev (Release)",
+      "cargo": {
+        "args": ["build", "--manifest-path=./src-tauri/Cargo.toml", "--release", "--no-default-features"],
+        "filter": {
+          "name": "B4-rt_3n-der",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "MCP Server (stdio)",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["tsx", "src/mcp/server.ts"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "MCP Server (SSE)",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["tsx", "src/mcp/server.ts", "--sse"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
+    },
+    {
+      "type": "chrome",
+      "request": "launch",
+      "name": "Vite Dev (Browser)",
+      "url": "http://localhost:1420",
+      "webRoot": "${workspaceFolder}/src",
+      "preLaunchTask": "ui-dev-server"
+    }
+  ]
+}
