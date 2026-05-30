@@ -5,7 +5,9 @@
       "label": "ui-dev-server",
       "type": "shell",
       "command": "npm run dev",
-      "cwd": "${workspaceFolder}",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
       "isBackground": true,
       "problemMatcher": {
         "owner": "vite",
@@ -15,7 +17,7 @@
         "background": {
           "activeOnStart": true,
           "beginsPattern": "VITE",
-          "endsPattern": "Local:.*localhost"
+          "endsPattern": "Local:.*1420"
         }
       },
       "presentation": {
