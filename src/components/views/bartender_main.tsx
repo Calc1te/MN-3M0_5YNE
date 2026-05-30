@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 
 import {
   buildToolResultPrompt,
-  chatWithBartender,
+  chatWithBartenderStream,
   createLocalMcpTransport,
   runMcpToolCallsDetailed,
   type BartenderToolResult,
@@ -25,6 +25,7 @@ export default function BartenderMain() {
   const [reply, setReply] = useState("");
   const [toolStatus, setToolStatus] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const applyToolStateChanges = (toolResults: BartenderToolResult[]) => {
@@ -63,14 +64,17 @@ export default function BartenderMain() {
     if (!trimmed) return;
 
     setIsLoading(true);
+    setIsSpeaking(true);
     setError(null);
     setToolStatus("");
+    setReply("");
 
     try {
-      const response = await chatWithBartender(trimmed, history);
+      const response = await chatWithBartenderStream(trimmed, history, setReply);
       const hasToolCalls = response.toolCalls.length > 0;
 
       setReply(response.assistant);
+      setIsSpeaking(false);
       setInput("");
 
       if (hasToolCalls) {
@@ -86,13 +90,17 @@ export default function BartenderMain() {
           { role: "user", content: trimmed },
           { role: "assistant", content: JSON.stringify(response) },
         ];
-        const finalReply = await chatWithBartender(
+        setReply("");
+        setIsSpeaking(true);
+        const finalReply = await chatWithBartenderStream(
           buildToolResultPrompt(toolResults),
           followUpHistory,
+          setReply,
         );
 
         setToolStatus("");
         setReply(finalReply.assistant);
+        setIsSpeaking(false);
 
         setHistory([
           ...history,
@@ -117,6 +125,7 @@ export default function BartenderMain() {
       setError(errorMessage);
       console.error("API call failed:", err);
     } finally {
+      setIsSpeaking(false);
       setIsLoading(false);
     }
   };
@@ -126,6 +135,7 @@ export default function BartenderMain() {
     setInput("");
     setReply("");
     setToolStatus("");
+    setIsSpeaking(false);
     setError(null);
   };
 
@@ -139,6 +149,7 @@ export default function BartenderMain() {
       <PDialog
         value={reply}
         readOnly
+        isSpeaking={isSpeaking}
         font="normal"
         rows={6}
         containerClassName="w-3/5 max-w-2xl"

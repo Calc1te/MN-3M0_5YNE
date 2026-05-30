@@ -5,11 +5,13 @@ export type PDialogProps = Omit<BitTextareaProps, "value"> & {
 value: string;
 containerClassName?: string;
 label?: string;
+isSpeaking?: boolean;
 };
 
 export default function PDialog({
 value,
 label,
+isSpeaking = false,
 containerClassName,
 readOnly = true,
 className,
@@ -30,6 +32,11 @@ return (
         readOnly={readOnly}
         className={className}
     />
+    {isSpeaking ? (
+        <span className="self-end text-xs leading-none text-foreground/70 animate-pulse">
+        |
+        </span>
+    ) : null}
     </div>
 );
 }

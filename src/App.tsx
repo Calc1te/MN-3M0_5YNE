@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "motion/react";
-import { type ReactNode, useEffect } from "react";
+import { type ReactNode } from "react";
 import {
   BrowserRouter as Router,
   Routes,

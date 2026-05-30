@@ -100,9 +100,7 @@ interface ArkMultimodalEmbeddingResponse {
 
 function buildEmbeddingUrl(baseUrl: string): string {
   const trimmed = baseUrl.replace(/\/+$/, "");
-  return trimmed.endsWith("/embeddings/multimodal")
-    ? trimmed
-    : `${trimmed}/embeddings/multimodal`;
+  return trimmed;
 }
 
 function getSystemPrompt(): string {
@@ -215,6 +213,59 @@ function parseModelJson(raw: string): BartenderReply {
   }
 }
 
+function decodeJsonStringFragment(fragment: string): string {
+  let safeFragment = fragment;
+  if (safeFragment.endsWith("\\")) {
+    safeFragment = safeFragment.slice(0, -1);
+  }
+  safeFragment = safeFragment.replace(/\\u[0-9a-fA-F]{0,3}$/, "");
+
+  try {
+    return JSON.parse(`"${safeFragment}"`) as string;
+  } catch {
+    return safeFragment
+      .replace(/\\"/g, '"')
+      .replace(/\\n/g, "\n")
+      .replace(/\\r/g, "\r")
+      .replace(/\\t/g, "\t")
+      .replace(/\\\\/g, "\\");
+  }
+}
+
+function extractAssistantPreview(raw: string): string {
+  const match = raw.match(/"assistant"\s*:\s*"/);
+  if (!match || match.index === undefined) {
+    return "";
+  }
+
+  const start = match.index + match[0].length;
+  let escaped = false;
+  let fragment = "";
+
+  for (let index = start; index < raw.length; index += 1) {
+    const char = raw[index];
+    if (escaped) {
+      fragment += `\\${char}`;
+      escaped = false;
+      continue;
+    }
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (char === '"') {
+      break;
+    }
+    fragment += char;
+  }
+
+  if (escaped) {
+    fragment += "\\";
+  }
+
+  return decodeJsonStringFragment(fragment);
+}
+
 export async function chatWithBartender(
   userInput: string,
   history: ChatTurn[] = [],
@@ -248,6 +299,60 @@ export async function chatWithBartender(
   }
 
   return parseModelJson(content);
+}
+
+export async function chatWithBartenderStream(
+  userInput: string,
+  history: ChatTurn[] = [],
+  onAssistantText?: (text: string) => void,
+): Promise<BartenderReply> {
+  if (!BARTENDER_API) {
+    throw new Error("Missing VITE_BARTENDER_URL");
+  }
+
+  const apiKey = import.meta.env.VITE_BARTENDER_LLM_API_KEY;
+  if (!apiKey) {
+    throw new Error(i18n.t("errors.missingApiKey"));
+  }
+
+  const model = import.meta.env.VITE_BARTENDER_MODEL;
+  if (!model) {
+    throw new Error("Missing VITE_ARK_ENDPOINT_ID");
+  }
+
+  const openai = createOpenAiClient(apiKey, ModelType.Bartender);
+  const stream = await openai.chat.completions.create({
+    model,
+    temperature: 0.7,
+    messages: await toChatMessages(history, userInput),
+    stream: true,
+  });
+
+  let raw = "";
+  let lastAssistantText = "";
+  for await (const part of stream) {
+    const content = part.choices[0]?.delta?.content ?? "";
+    if (!content) {
+      continue;
+    }
+
+    raw += content;
+    const nextAssistantText = extractAssistantPreview(raw);
+    if (nextAssistantText && nextAssistantText !== lastAssistantText) {
+      lastAssistantText = nextAssistantText;
+      onAssistantText?.(nextAssistantText);
+    }
+  }
+
+  if (!raw.trim()) {
+    throw new Error(i18n.t("errors.emptyModelResponse"));
+  }
+
+  const reply = parseModelJson(raw);
+  if (reply.assistant !== lastAssistantText) {
+    onAssistantText?.(reply.assistant);
+  }
+  return reply;
 }
 
 export async function createMemoryVector(
