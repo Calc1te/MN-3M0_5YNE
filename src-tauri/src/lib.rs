@@ -8,6 +8,7 @@ use axum::{
 };
 use serde::de::Error as SerdeError;
 use serde::{Deserialize, Deserializer, Serialize};
+use tauri::{Manager, Position, PhysicalPosition};
 use std::sync::{Mutex, OnceLock};
 use std::{
     env,
@@ -953,6 +954,24 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+                .setup(|app| {
+            if let Some(window) = app.get_webview_window("main") {
+
+                if let Ok(Some(monitor)) = window.current_monitor() {
+                    let screen_size = monitor.size();
+                    let window_size = window.outer_size().unwrap_or_default();
+                    let x = screen_size.width.saturating_sub(window_size.width) - 10;
+                    let y = screen_size.height.saturating_sub(window_size.height) -100;
+
+                    // window.set_position(Position::Physical(PhysicalPosition {
+                    //     x :x as i32,
+                    //     y :y as i32
+                    // })).unwrap();
+                }
+                window.show().unwrap();
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             base_list,
             get_base,

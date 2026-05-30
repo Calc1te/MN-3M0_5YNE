@@ -1,8 +1,7 @@
 {
   "ui": {
-    "title": "欢迎来到 Tauri + React",
-    "hint": "点击 Tauri、Vite 和 React 图标了解更多。",
-    "inputPlaceholder": "输入名字...",
+    "title": "B4-rt 3n-der",
+    "inputPlaceholder": "写点啥",
     "greet": "打招呼",
     "language": "语言",
     "back": "返回",
