@@ -10,10 +10,10 @@ import {
 } from "react-router-dom";
 import "./App.css";
 import Menu from "./components/views/menu.tsx";
-import About from "./components/settings/about.tsx";
+import About from "./components/views/settings/about.tsx";
 import BartenderMain from "./components/views/bartender_main.tsx";
 import DebugMenu from "./components/debug.tsx";
-import SettingsPanel from "./components/settings/panel.tsx";
+import SettingsPanel from "./components/views/settings/panel.tsx";
 
 function PanelTransition({ children }: { children: ReactNode }) {
   return (
