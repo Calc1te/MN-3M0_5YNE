@@ -13,6 +13,11 @@
     "directoryRequired": "请输入目录路径",
     "directoryChanged": "目录已修改为",
     "currentPath": "当前路径",
+    "apiKey": "API Key",
+    "apiKeyPlaceholder": "输入 API Key...",
+    "apiKeySave": "保存",
+    "apiKeySaved": "API Key 已保存",
+    "apiKeyCleared": "API Key 已清空",
     "viteLogoAlt": "Vite 图标",
     "tauriLogoAlt": "Tauri 图标",
     "about": "关于"
@@ -27,7 +32,7 @@
     "about": "关于"
   },
   "errors": {
-    "missingApiKey": "缺少 VITE_ARK_API_KEY",
+    "missingApiKey": "缺少 API Key，请先在设置中填写",
     "emptyModelResponse": "模型返回为空"
   },
   "prompts": {

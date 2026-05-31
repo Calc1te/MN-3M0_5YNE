@@ -12,6 +12,7 @@ import {
 import PDialog from "@/components/P_dialog";
 import PSprite from "@/components/P_sprite";
 import UserInput from "@/components/user_input";
+import { ghostModeRegionProps } from "@/lib/ghost-mode";
 import { cn } from "@/lib/utils";
 import { changeBartenderState, isBartenderState } from "@/uiControllers/bartender";
 
@@ -147,6 +148,7 @@ export default function BartenderMain() {
       )}
     >
       <PDialog
+        containerProps={ghostModeRegionProps}
         value={reply}
         readOnly
         isSpeaking={isSpeaking}
@@ -160,24 +162,29 @@ export default function BartenderMain() {
       />
       {toolStatus && (
         <div
+          {...ghostModeRegionProps}
           className={cn(
-            "w-full max-w-2xl text-right text-xs text-foreground/70",
+            "w-fit max-w-2xl text-right text-xs text-foreground/70",
             chatFontClass,
           )}
         >
           {toolStatus}
         </div>
       )}
-      <PSprite className="p-sprite-container" />
+      <PSprite className="p-sprite-container" {...ghostModeRegionProps} />
 
 
       {error && (
-        <div className="w-full max-w-2xl p-2 bg-destructive/20 text-destructive text-sm rounded">
+        <div
+          {...ghostModeRegionProps}
+          className="w-full max-w-2xl p-2 bg-destructive/20 text-destructive text-sm rounded"
+        >
           {error}
         </div>
       )}
 
       <UserInput
+        {...ghostModeRegionProps}
         value={input}
         onChange={setInput}
         onSubmit={() => void handleSendMessage()}
@@ -193,7 +200,7 @@ export default function BartenderMain() {
         inputProps={{ font: "normal" }}
         buttonProps={isZh ? { font: "normal" } : undefined}
       />
-      <div className="flex w-full max-w-2xl justify-end">
+      <div className="flex w-fit max-w-2xl justify-end" {...ghostModeRegionProps}>
         <button
           onClick={handleClearHistory}
           className="px-3 py-2 bg-secondary text-secondary-foreground rounded text-sm hover:bg-secondary/90"

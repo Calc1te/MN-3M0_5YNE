@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "motion/react";
-import { type ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import {
   BrowserRouter as Router,
   Routes,
@@ -14,6 +14,11 @@ import About from "./components/views/settings/about.tsx";
 import BartenderMain from "./components/views/bartender_main.tsx";
 import DebugMenu from "./components/debug.tsx";
 import SettingsPanel from "./components/views/settings/panel.tsx";
+import {
+  disableClick,
+  enableClick,
+  ghostModeRegionProps,
+} from "@/lib/ghost-mode";
 
 function PanelTransition({ children }: { children: ReactNode }) {
   return (
@@ -42,7 +47,9 @@ function AppRoutes() {
           element={
             <PanelTransition>
               <main className="container" color="none">
-                <h1>{t("ui.title")}</h1>
+                <h1 className="w-fit" {...ghostModeRegionProps}>
+                  {t("ui.title")}
+                </h1>
                 <BartenderMain />
                 <DebugMenu />
               </main>
@@ -53,7 +60,9 @@ function AppRoutes() {
           path="/settings"
           element={
             <PanelTransition>
-              <SettingsPanel />
+              <div onMouseEnter={enableClick} onMouseLeave={disableClick}>
+                <SettingsPanel />
+              </div>
             </PanelTransition>
           }
         />
@@ -61,7 +70,9 @@ function AppRoutes() {
           path="/about"
           element={
             <PanelTransition>
-              <About />
+              <div onMouseEnter={enableClick} onMouseLeave={disableClick}>
+                <About />
+              </div>
             </PanelTransition>
           }
         />
@@ -71,6 +82,18 @@ function AppRoutes() {
 }
 
 function App() {
+  useEffect(() => {
+    const handleWindowMouseEnter = () => {
+      disableClick();
+    };
+
+    window.addEventListener("mouseenter", handleWindowMouseEnter);
+    return () => {
+      window.removeEventListener("mouseenter", handleWindowMouseEnter);
+      enableClick();
+    };
+  }, []);
+
   return (
     <Router>
       <Menu>

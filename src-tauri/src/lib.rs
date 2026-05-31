@@ -8,7 +8,6 @@ use axum::{
 };
 use serde::de::Error as SerdeError;
 use serde::{Deserialize, Deserializer, Serialize};
-use tauri::{Manager, Position, PhysicalPosition};
 use std::sync::{Mutex, OnceLock};
 use std::{
     env,
@@ -20,6 +19,7 @@ use std::{
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
+use tauri::{Manager, PhysicalPosition, Position, WebviewWindow};
 
 use chrono::prelude::*;
 use tower_http::cors::CorsLayer;
@@ -163,6 +163,13 @@ fn shaker_root_dir() -> Result<PathBuf, String> {
     Ok(root)
 }
 
+fn config_root_dir() -> Result<PathBuf, String> {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".bar");
+    fs::create_dir_all(&root)
+        .map_err(|e| format!("Failed to create config directory {}: {e}", root.display()))?;
+    Ok(root)
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 struct BarConfig {
     #[serde(rename = "Name", default = "default_user_name")]
@@ -175,6 +182,8 @@ struct BarConfig {
         deserialize_with = "deserialize_bar_path"
     )]
     bar_path: String,
+    #[serde(rename = "API_Key", default)]
+    api_key: String,
 }
 
 fn default_user_name() -> String {
@@ -187,6 +196,7 @@ impl Default for BarConfig {
             name: default_user_name(),
             last_activated: 0,
             bar_path: String::new(),
+            api_key: String::new(),
         }
     }
 }
@@ -204,7 +214,7 @@ where
 }
 
 fn config_path() -> Result<PathBuf, String> {
-    Ok(bar_root_dir()?.join("configs.json"))
+    Ok(config_root_dir()?.join("configs.json"))
 }
 
 fn read_config() -> Result<BarConfig, String> {
@@ -222,8 +232,7 @@ fn write_config(config: &BarConfig) -> Result<(), String> {
     let path = config_path()?;
     let bytes = serde_json::to_vec_pretty(config)
         .map_err(|e| format!("Failed to serialize config {}: {e}", path.display()))?;
-    fs::write(&path, bytes)
-        .map_err(|e| format!("Failed to write config {}: {e}", path.display()))
+    fs::write(&path, bytes).map_err(|e| format!("Failed to write config {}: {e}", path.display()))
 }
 
 fn update_config<F>(mutator: F) -> Result<BarConfig, String>
@@ -265,6 +274,19 @@ fn set_user_name_internal(name: String) -> Result<String, String> {
         Ok(config)
     })?;
     Ok(config.name)
+}
+
+fn set_api_key_internal(api_key: String) -> Result<String, String> {
+    let trimmed = api_key.trim().to_string();
+    let config = update_config(|mut config| {
+        config.api_key = trimmed;
+        Ok(config)
+    })?;
+    Ok(config.api_key)
+}
+
+fn get_api_key_internal() -> Result<String, String> {
+    Ok(read_config()?.api_key)
 }
 
 fn memory_db_dir() -> Result<PathBuf, String> {
@@ -751,6 +773,16 @@ fn set_user_name(name: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+fn set_api_key(api_key: String) -> Result<String, String> {
+    set_api_key_internal(api_key)
+}
+
+#[tauri::command]
+fn get_api_key() -> Result<String, String> {
+    get_api_key_internal()
+}
+
+#[tauri::command]
 fn get_startup_context() -> Result<BarConfig, String> {
     if let Some(context) = STARTUP_CONTEXT.get() {
         return Ok(context.clone());
@@ -829,6 +861,11 @@ async fn retrive_memory(vector: Vec<f32>) -> Result<String, ApiError> {
         .await
         .map_err(|error| ApiError { error })?;
     Ok(memories.join("\n"))
+}
+
+#[tauri::command]
+async fn set_ghost_mode(window: WebviewWindow, ignore: bool) {
+    let _ = window.set_ignore_cursor_events(ignore);
 }
 
 async fn health() -> Json<HealthResponse> {
@@ -954,14 +991,13 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-                .setup(|app| {
+        .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
-
                 if let Ok(Some(monitor)) = window.current_monitor() {
                     let screen_size = monitor.size();
                     let window_size = window.outer_size().unwrap_or_default();
                     let x = screen_size.width.saturating_sub(window_size.width) - 10;
-                    let y = screen_size.height.saturating_sub(window_size.height) -100;
+                    let y = screen_size.height.saturating_sub(window_size.height) - 100;
 
                     // window.set_position(Position::Physical(PhysicalPosition {
                     //     x :x as i32,
@@ -980,10 +1016,13 @@ pub fn run() {
             permanently_delete_base,
             change_base_directory,
             set_user_name,
+            set_api_key,
+            get_api_key,
             get_startup_context,
             add_memory,
             retrive_memory,
-            get_time_and_date
+            get_time_and_date,
+            set_ghost_mode
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

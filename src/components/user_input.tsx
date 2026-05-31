@@ -4,7 +4,8 @@ import { Button, type BitButtonProps } from "@/components/ui/8bit/button";
 import { Input, type BitInputProps } from "@/components/ui/8bit/input";
 import { cn } from "@/lib/utils";
 
-export interface UserInputProps {
+export interface UserInputProps
+  extends Omit<React.HTMLAttributes<HTMLDivElement>, "onChange" | "onSubmit"> {
   value: string;
   onChange: (value: string) => void;
   onSubmit?: (value: string) => void;
@@ -32,6 +33,7 @@ export default function UserInput({
   buttonClassName,
   inputProps,
   buttonProps,
+  ...containerProps
 }: UserInputProps) {
   const {
     onKeyDown: inputOnKeyDown,
@@ -69,7 +71,10 @@ export default function UserInput({
   };
 
   return (
-    <div className={cn("flex items-center gap-2", className)}>
+    <div
+      {...containerProps}
+      className={cn("flex items-center gap-2", className)}
+    >
       <Input
         {...restInputProps}
         type={inputType ?? "text"}

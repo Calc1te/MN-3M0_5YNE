@@ -13,6 +13,11 @@
     "directoryRequired": "Please enter a directory path",
     "directoryChanged": "Directory changed to",
     "currentPath": "Current Path",
+    "apiKey": "API Key",
+    "apiKeyPlaceholder": "Enter API Key...",
+    "apiKeySave": "Save",
+    "apiKeySaved": "API Key saved",
+    "apiKeyCleared": "API Key cleared",
     "about": "This is about page"
   },
   "menu": {
@@ -25,7 +30,7 @@
     "sending": "thinking"
   },
   "errors": {
-    "missingApiKey": "Missing VITE_ARK_API_KEY",
+    "missingApiKey": "Missing API Key. Add one in Settings first.",
     "emptyModelResponse": "Model returned empty response"
   },
   "prompts": {

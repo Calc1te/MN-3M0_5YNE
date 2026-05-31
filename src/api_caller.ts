@@ -5,6 +5,7 @@ import type {
 } from "openai/resources/chat/completions/completions";
 import { invoke } from "@tauri-apps/api/core";
 import i18n, { getCurrentLanguage } from "./i18n";
+import { getRuntimeApiKey } from "@/lib/api-key";
 
 export type Role = "user" | "assistant" | "system";
 
@@ -274,7 +275,7 @@ export async function chatWithBartender(
     throw new Error("Missing VITE_BARTENDER_URL");
   }
 
-  const apiKey = import.meta.env.VITE_BARTENDER_LLM_API_KEY;
+  const apiKey = await getRuntimeApiKey();
   if (!apiKey) {
     throw new Error(i18n.t("errors.missingApiKey"));
   }
@@ -310,7 +311,7 @@ export async function chatWithBartenderStream(
     throw new Error("Missing VITE_BARTENDER_URL");
   }
 
-  const apiKey = import.meta.env.VITE_BARTENDER_LLM_API_KEY;
+  const apiKey = await getRuntimeApiKey();
   if (!apiKey) {
     throw new Error(i18n.t("errors.missingApiKey"));
   }
@@ -359,7 +360,7 @@ export async function createMemoryVector(
   memoryText: string,
   memoryContent: string,
 ): Promise<memoryEntry> {
-  const apiKey = import.meta.env.VITE_BARTENDER_LLM_API_KEY;
+  const apiKey = await getRuntimeApiKey();
   if (!apiKey) {
     throw new Error(i18n.t("errors.missingApiKey"));
   }
