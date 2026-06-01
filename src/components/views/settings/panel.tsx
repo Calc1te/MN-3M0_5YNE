@@ -139,7 +139,7 @@ export default function SettingsPanel() {
             <span>{t("ui.rememberOnExit")}</span>
           </label>
           {exitStatus && (
-            <div className="text-xs text-foreground/70">{exitStatus}</div>
+            <div className="text-xs text-white/70">{exitStatus}</div>
           )}
         </section>
 
@@ -207,7 +207,7 @@ export default function SettingsPanel() {
                 {t("ui.configSave")}
               </Button>
               {configStatus && (
-                <div className="text-xs text-foreground/70">
+                <div className="text-xs text-white/70">
                   {configStatus}
                 </div>
               )}

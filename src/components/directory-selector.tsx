@@ -72,7 +72,7 @@ export default function DirectorySelector() {
       </span>
 
       {currentPath && (
-        <div className="text-xs text-foreground/70">
+        <div className="text-xs text-white/70">
           {t("ui.currentPath") || "Current Path"}: {currentPath}
         </div>
       )}
@@ -84,20 +84,20 @@ export default function DirectorySelector() {
       )}
 
       {success && (
-        <div className="text-xs text-foreground/70">
+        <div className="text-xs text-white/70">
           {success}
         </div>
       )}
 
       <div className="flex w-full items-center gap-3">
-        <div className="min-w-0 flex-1 truncate border-y-6 border-[#483D8B] bg-black px-3 py-1.5 text-sm text-white">
+        <div className="min-w-0 flex-1 truncate border-y-6 border-x-6 border-[#483D8B] bg-black px-3 py-1.5 text-sm text-white">
           {currentPath || t("ui.directoryUnset") || "No directory selected"}
         </div>
         <Button
           onClick={() => void handleChooseDirectory()}
           disabled={isLoading}
           font="normal"
-          className={cn("h-9 shrink-0 px-4", isLoading && "opacity-70")}
+          className={cn("h-9 shrink-0 px-4 ml-2", isLoading && "opacity-70")}
         >
           {isLoading
             ? t("ui.directoryChanging") || "Changing..."
