@@ -40,7 +40,13 @@ function PanelTransition({ children }: { children: ReactNode }) {
   );
 }
 
-function AppRoutes() {
+function AppRoutes({
+  showSetupCompletePrompt,
+  onSetupCompletePromptShown,
+}: {
+  showSetupCompletePrompt: boolean;
+  onSetupCompletePromptShown: () => void;
+}) {
   const { t } = useTranslation();
   const location = useLocation();
 
@@ -56,7 +62,10 @@ function AppRoutes() {
                 <h1 className="w-fit" {...ghostModeRegionProps}>
                   {t("ui.title")}
                 </h1>
-                <BartenderMain />
+                <BartenderMain
+                  showSetupCompletePrompt={showSetupCompletePrompt}
+                  onSetupCompletePromptShown={onSetupCompletePromptShown}
+                />
                 <DebugMenu />
               </main>
             </PanelTransition>
@@ -93,6 +102,7 @@ function App() {
     completed: boolean;
     config?: AppConfig;
   }>({ loading: true, completed: true });
+  const [showSetupCompletePrompt, setShowSetupCompletePrompt] = useState(false);
 
   useEffect(() => {
     const handleWindowMouseEnter = () => {
@@ -132,17 +142,23 @@ function App() {
       {shouldShowSetup ? (
         <InitialSetup
           initialConfig={setupState.config}
-          onComplete={() =>
+          onComplete={() => {
+            setShowSetupCompletePrompt(true);
             setSetupState((current) => ({
-              ...current,
-              completed: true,
-            }))
-          }
+                ...current,
+                completed: true,
+            }));
+          }}
         />
       ) : (
         <Menu>
           <div className="min-h-screen w-full">
-            <AppRoutes />
+            <AppRoutes
+              showSetupCompletePrompt={showSetupCompletePrompt}
+              onSetupCompletePromptShown={() =>
+                setShowSetupCompletePrompt(false)
+              }
+            />
           </div>
         </Menu>
       )}

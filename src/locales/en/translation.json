@@ -27,6 +27,9 @@
     "embeddingModelPlaceholder": "Embedding model...",
     "configSave": "Save",
     "configSaved": "Configuration saved",
+    "exit": "Exit",
+    "rememberOnExit": "Let P clean up and remember this session on exit",
+    "exitMemorySaving": "P is cleaning the bar...",
     "about": "This is about page"
   },
   "setup": {
@@ -59,6 +62,7 @@
     "startup": {
       "first": "This is your first launch.",
       "stale": "{{user}} last launched you {{days}} days ago."
-    }
+    },
+    "setup_complete": "Fine. The bar is wired, the shelves are assigned, and I have enough keys to start ruining your file pile with style. Type something when you want a drink."
   }
 }

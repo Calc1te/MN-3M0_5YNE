@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -19,7 +19,15 @@ import {
   isBartenderState,
 } from "@/uiControllers/bartender";
 
-export default function BartenderMain() {
+interface BartenderMainProps {
+  showSetupCompletePrompt?: boolean;
+  onSetupCompletePromptShown?: () => void;
+}
+
+export default function BartenderMain({
+  showSetupCompletePrompt = false,
+  onSetupCompletePromptShown,
+}: BartenderMainProps) {
   const { t, i18n } = useTranslation();
   const language = i18n.resolvedLanguage ?? i18n.language;
   const isZh = Boolean(language && language.startsWith("zh"));
@@ -31,6 +39,18 @@ export default function BartenderMain() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!showSetupCompletePrompt) {
+      return;
+    }
+
+    setReply(t("prompts.setup_complete"));
+    setToolStatus("");
+    setError(null);
+    setIsSpeaking(false);
+    onSetupCompletePromptShown?.();
+  }, [onSetupCompletePromptShown, showSetupCompletePrompt, t]);
 
   const applyToolStateChanges = (toolResults: BartenderToolResult[]) => {
     for (const { call, result } of toolResults) {
@@ -182,7 +202,7 @@ export default function BartenderMain() {
         </div>
       )}
       <PSprite
-        className="p-sprite-container self-end"
+        className="p-sprite-container self-end" data-tauri-drag-region
         {...ghostModeRegionProps}
       />
 

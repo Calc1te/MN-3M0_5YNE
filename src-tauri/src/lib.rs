@@ -19,7 +19,7 @@ use std::{
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
-use tauri::{Manager, WebviewWindow};
+use tauri::{AppHandle, Manager, WebviewWindow};
 
 use chrono::prelude::*;
 use tower_http::cors::CorsLayer;
@@ -203,6 +203,8 @@ struct BarConfig {
     embedding_model: String,
     #[serde(rename = "Setup_Completed", default)]
     setup_completed: bool,
+    #[serde(rename = "Remember_On_Exit", default)]
+    remember_on_exit: bool,
 }
 
 fn default_user_name() -> String {
@@ -222,6 +224,7 @@ impl Default for BarConfig {
             embedding_base_url: String::new(),
             embedding_model: String::new(),
             setup_completed: false,
+            remember_on_exit: false,
         }
     }
 }
@@ -1038,6 +1041,11 @@ async fn set_ghost_mode(window: WebviewWindow, ignore: bool) {
     let _ = window.set_ignore_cursor_events(ignore);
 }
 
+#[tauri::command]
+fn quit_app(app: AppHandle) {
+    app.exit(0);
+}
+
 async fn health() -> Json<HealthResponse> {
     Json(HealthResponse { ok: true })
 }
@@ -1187,7 +1195,8 @@ pub fn run() {
             add_memory,
             retrive_memory,
             get_time_and_date,
-            set_ghost_mode
+            set_ghost_mode,
+            quit_app
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

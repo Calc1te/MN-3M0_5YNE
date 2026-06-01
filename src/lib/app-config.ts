@@ -11,6 +11,7 @@ export interface AppConfig {
   Embedding_Base_URL: string;
   Embedding_Model: string;
   Setup_Completed: boolean;
+  Remember_On_Exit: boolean;
 }
 
 export interface InitialSetupStatus {
@@ -42,6 +43,7 @@ export function buildDefaultAppConfig(): AppConfig {
     Embedding_Base_URL: "",
     Embedding_Model: "",
     Setup_Completed: false,
+    Remember_On_Exit: false,
   };
 }
 

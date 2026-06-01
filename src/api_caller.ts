@@ -398,6 +398,53 @@ export async function createMemoryVector(
   };
 }
 
+export async function summarizeExitMemory(context: {
+  language: string;
+  baseDir?: string;
+  barRootParent?: string;
+}): Promise<string> {
+  const config = await getRuntimeLlmConfig();
+  if (!config.chatBaseUrl) {
+    throw new Error("Missing VITE_BARTENDER_URL");
+  }
+  if (!config.chatModel) {
+    throw new Error("Missing VITE_ARK_ENDPOINT_ID");
+  }
+  if (!config.apiKey) {
+    throw new Error(i18n.t("errors.missingApiKey"));
+  }
+
+  const isZh = context.language.startsWith("zh");
+  const openai = createOpenAiClient(config.apiKey, config.chatBaseUrl);
+  const completion = await openai.chat.completions.create({
+    model: config.chatModel,
+    temperature: 0.4,
+    messages: [
+      {
+        role: "system",
+        content: isZh
+          ? "你是酒保 P。用户即将退出应用。生成一条可以写入长期记忆的简短总结，只记录稳定偏好、配置位置、使用意图或值得下次复用的上下文。不要包含 API key、密钥、完整 base URL、令牌或敏感凭据。只输出记忆正文。"
+          : "You are bartender P. The user is exiting the app. Generate one short long-term memory note, only covering stable preferences, configured locations, user intent, or context worth reusing next time. Do not include API keys, secrets, full base URLs, tokens, or sensitive credentials. Output only the memory text.",
+      },
+      {
+        role: "user",
+        content: JSON.stringify({
+          language: context.language,
+          baseDir: context.baseDir || "",
+          barRootParent: context.barRootParent || "",
+          exitedAt: new Date().toISOString(),
+        }),
+      },
+    ],
+  });
+
+  const content = completion.choices[0]?.message?.content?.trim();
+  if (!content) {
+    throw new Error(i18n.t("errors.emptyModelResponse"));
+  }
+  return content;
+}
+
 function normalizeMemoryTags(tags: unknown): string[] {
   if (Array.isArray(tags)) {
     return tags.flatMap(normalizeMemoryTags);

@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
+import { invoke } from "@tauri-apps/api/core";
 
+import { createMemoryVector, summarizeExitMemory } from "@/api_caller";
 import DirectorySelector from "@/components/directory-selector";
 import { Button } from "@/components/ui/8bit/button";
+import { Checkbox } from "@/components/ui/8bit/checkbox";
 import { Input } from "@/components/ui/8bit/input";
 import {
   Select,
@@ -29,6 +32,8 @@ export default function SettingsPanel() {
   const selectValue = language === "zh-CN" ? "zh-CN" : "en";
   const [config, setConfig] = useState<AppConfig>(() => buildDefaultAppConfig());
   const [configStatus, setConfigStatus] = useState<string | null>(null);
+  const [exitStatus, setExitStatus] = useState<string | null>(null);
+  const [isExiting, setIsExiting] = useState(false);
 
   useEffect(() => {
     void getAppConfig()
@@ -53,18 +58,82 @@ export default function SettingsPanel() {
   const updateConfig = (patch: Partial<AppConfig>) => {
     setConfig((current) => ({ ...current, ...patch }));
     setConfigStatus(null);
+    setExitStatus(null);
+  };
+
+  const handleExit = async () => {
+    setIsExiting(true);
+    setExitStatus(null);
+
+    try {
+      const savedConfig = await saveAppConfig(config);
+      setConfig(savedConfig);
+
+      if (savedConfig.Remember_On_Exit) {
+        setExitStatus(t("ui.exitMemorySaving"));
+        const summary = await summarizeExitMemory({
+          language,
+          baseDir: savedConfig.Base_Dir,
+          barRootParent: savedConfig.Bar_Root_Parent,
+        });
+        const memory = await createMemoryVector(summary, summary);
+        await invoke("add_memory", {
+          text: summary,
+          vector: Array.from(memory.vector),
+          tags: ["exit", "session_summary"],
+        });
+      }
+
+      await invoke("quit_app");
+    } catch (error) {
+      setExitStatus(
+        error instanceof Error ? error.message : "Failed to exit cleanly",
+      );
+      setIsExiting(false);
+    }
   };
 
   return (
     <main className={cn("container flex flex-col gap-6 ", isZh && "font-ui-cn")}>
       <div className="flex items-center justify-between w-full">
         <h1 className="text-lg font-semibold pl-6">{t("menu.settings")}</h1>
-        <Button font="normal" onClick={() => navigate("/bartender-main")}>
-          {t("ui.back")}
-        </Button>
+        <div className="flex items-center gap-3">
+          <Button
+            font="normal"
+            onClick={() => navigate("/bartender-main")}
+            disabled={isExiting}
+          >
+            {t("ui.back")}
+          </Button>
+          <Button
+            font="normal"
+            onClick={() => void handleExit()}
+            disabled={isExiting}
+            className="text-background"
+          >
+            {t("ui.exit")}
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-col gap-6 pl-6 w-full">
+        <section className="flex w-full max-w-xl flex-col gap-3">
+          <label className="flex items-center gap-3 text-sm">
+            <Checkbox
+              checked={config.Remember_On_Exit}
+              onCheckedChange={(checked) =>
+                updateConfig({ Remember_On_Exit: checked === true })
+              }
+              disabled={isExiting}
+              font="normal"
+            />
+            <span>{t("ui.rememberOnExit")}</span>
+          </label>
+          {exitStatus && (
+            <div className="text-xs text-foreground/70">{exitStatus}</div>
+          )}
+        </section>
+
         <section className="flex flex-col gap-6 max-w-xs">
           <span className="text-sm">{t("ui.language")}</span>
           <Select value={selectValue} onValueChange={(value) => void i18n.changeLanguage(value)}>

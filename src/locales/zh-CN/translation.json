@@ -27,6 +27,9 @@
     "embeddingModelPlaceholder": "Embedding 模型...",
     "configSave": "保存",
     "configSaved": "配置已保存",
+    "exit": "退出",
+    "rememberOnExit": "退出时让 P 打扫酒吧并记住这次会话",
+    "exitMemorySaving": "P 正在打扫酒吧……",
     "viteLogoAlt": "Vite 图标",
     "tauriLogoAlt": "Tauri 图标",
     "about": "关于"
@@ -61,6 +64,7 @@
     "startup": {
       "first": "这是你第一次启动",
       "stale": "{{user}}上一次启动你已经是{{days}}天前"
-    }
+    },
+    "setup_complete": "行。吧台接好了，货架归位了，钥匙也塞进来了。现在把你的文件堆丢过来，我会把它们调成像样一点的东西。"
   }
 }
