@@ -292,7 +292,7 @@ function createServer(): McpServer {
     "change_state",
     {
       title: "change sprite state",
-      description: "Change the sprite of the bartender. Available states: idle/shaking/smoking/griefing",
+      description: "Change the sprite of the bartender. Available states: idle/shaking/smoking/lookingAtYou",
       inputSchema: {
         state: z.string().min(1),
       },

@@ -14,7 +14,10 @@ import PSprite from "@/components/P_sprite";
 import UserInput from "@/components/user_input";
 import { ghostModeRegionProps } from "@/lib/ghost-mode";
 import { cn } from "@/lib/utils";
-import { changeBartenderState, isBartenderState } from "@/uiControllers/bartender";
+import {
+  changeBartenderState,
+  isBartenderState,
+} from "@/uiControllers/bartender";
 
 export default function BartenderMain() {
   const { t, i18n } = useTranslation();
@@ -51,7 +54,12 @@ export default function BartenderMain() {
       }
 
       const normalized = rawState.trim().toLowerCase();
-      const mapped = normalized === "smoling" ? "smoking" : normalized;
+      const mapped =
+        normalized === "smoling"
+          ? "smoking"
+          : normalized === "lookingatyou"
+            ? "lookingAtYou"
+            : normalized;
       if (!isBartenderState(mapped)) {
         console.warn("Unknown bartender state from MCP:", rawState);
         continue;
@@ -79,7 +87,9 @@ export default function BartenderMain() {
       setInput("");
 
       if (hasToolCalls) {
-        setToolStatus(t("ui.toolCalling") || "P is rummaging through the file pile...");
+        setToolStatus(
+          t("ui.toolCalling") || "P is rummaging through the file pile...",
+        );
         const toolResults = await runMcpToolCallsDetailed(
           response.toolCalls,
           createLocalMcpTransport(),
@@ -143,7 +153,7 @@ export default function BartenderMain() {
   return (
     <section
       className={cn(
-        "w-full max-w-3xl ml-auto flex flex-col items-end gap-4 text-background",
+        "fixed right-4 bottom-4 z-20 flex w-[min(24rem,calc(100vw-2rem))] max-h-[calc(100vh-2rem)] flex-col items-end justify-end gap-3 text-background",
         isZh && "font-ui-cn",
       )}
     >
@@ -154,7 +164,7 @@ export default function BartenderMain() {
         isSpeaking={isSpeaking}
         font="normal"
         rows={6}
-        containerClassName="w-3/5 max-w-2xl"
+        containerClassName="w-full"
         className={cn(
           "w-full bg-foreground text-background placeholder:text-background/60",
           chatFontClass,
@@ -164,20 +174,22 @@ export default function BartenderMain() {
         <div
           {...ghostModeRegionProps}
           className={cn(
-            "w-fit max-w-2xl text-right text-xs text-foreground/70",
+            "w-full text-right text-xs text-foreground/70",
             chatFontClass,
           )}
         >
           {toolStatus}
         </div>
       )}
-      <PSprite className="p-sprite-container" {...ghostModeRegionProps} />
-
+      <PSprite
+        className="p-sprite-container self-end"
+        {...ghostModeRegionProps}
+      />
 
       {error && (
         <div
           {...ghostModeRegionProps}
-          className="w-full max-w-2xl p-2 bg-destructive/20 text-destructive text-sm rounded"
+          className="w-full p-2 bg-destructive/20 text-destructive text-sm rounded"
         >
           {error}
         </div>
@@ -192,7 +204,7 @@ export default function BartenderMain() {
         disabled={isLoading}
         buttonLabel={isLoading ? t("utils.sending") : t("utils.send")}
         buttonClassName="w-20 h-8 text-white"
-        className="ml-auto w-full max-w-2xl justify-end"
+        className="w-full justify-end"
         inputClassName={cn(
           "bg-foreground text-background placeholder:text-background/60",
           chatFontClass,
@@ -200,7 +212,7 @@ export default function BartenderMain() {
         inputProps={{ font: "normal" }}
         buttonProps={isZh ? { font: "normal" } : undefined}
       />
-      <div className="flex w-fit max-w-2xl justify-end" {...ghostModeRegionProps}>
+      <div className="flex w-fit justify-end" {...ghostModeRegionProps}>
         <button
           onClick={handleClearHistory}
           className="px-3 py-2 bg-secondary text-secondary-foreground rounded text-sm hover:bg-secondary/90"

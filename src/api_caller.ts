@@ -6,6 +6,7 @@ import type {
 import { invoke } from "@tauri-apps/api/core";
 import i18n, { getCurrentLanguage } from "./i18n";
 import { getRuntimeApiKey } from "@/lib/api-key";
+import { getRuntimeLlmConfig } from "@/lib/app-config";
 
 export type Role = "user" | "assistant" | "system";
 
@@ -36,16 +37,6 @@ export interface memoryEntry {
   content: string;
 }
 
-enum ModelType {
-  Bartender,
-}
-
-const BARTENDER_API =
-  import.meta.env.VITE_BARTENDER_URL;
-
-const EMBD_API =
-  import.meta.env.VITE_EMBD_URL;
-
 const CHAT_COMPLETIONS_SUFFIX = "/chat/completions";
 
 function normalizeChatCompletionsBaseUrl(baseUrl?: string): string | undefined {
@@ -59,15 +50,10 @@ function normalizeChatCompletionsBaseUrl(baseUrl?: string): string | undefined {
     : trimmed;
 }
 
-function createOpenAiClient(apiKey: string, model: ModelType): OpenAI {
-  const baseURL =
-    model === ModelType.Bartender
-      ? normalizeChatCompletionsBaseUrl(BARTENDER_API)
-      : normalizeChatCompletionsBaseUrl(BARTENDER_API);
-
+function createOpenAiClient(apiKey: string, baseUrl: string): OpenAI {
   return new OpenAI({
     apiKey,
-    baseURL,
+    baseURL: normalizeChatCompletionsBaseUrl(baseUrl),
     dangerouslyAllowBrowser: true,
   });
 }
@@ -112,7 +98,7 @@ function getSystemPrompt(): string {
 interface StartupContext {
   Name?: string;
   Last_Activated?: number;
-  Bar_Path?: string;
+  Base_Dir?: string;
 }
 
 async function buildStartupLine(): Promise<string> {
@@ -271,21 +257,22 @@ export async function chatWithBartender(
   userInput: string,
   history: ChatTurn[] = [],
 ): Promise<BartenderReply> {
-  if (!BARTENDER_API) {
+  const config = await getRuntimeLlmConfig();
+  if (!config.chatBaseUrl) {
     throw new Error("Missing VITE_BARTENDER_URL");
   }
 
-  const apiKey = await getRuntimeApiKey();
+  const apiKey = config.apiKey || (await getRuntimeApiKey());
   if (!apiKey) {
     throw new Error(i18n.t("errors.missingApiKey"));
   }
 
-  const model = import.meta.env.VITE_BARTENDER_MODEL;
+  const model = config.chatModel;
   if (!model) {
     throw new Error("Missing VITE_ARK_ENDPOINT_ID");
   }
 
-  const openai = createOpenAiClient(apiKey, ModelType.Bartender);
+  const openai = createOpenAiClient(apiKey, config.chatBaseUrl);
   const request: ChatCompletionCreateParamsNonStreaming = {
     model,
     temperature: 0.7,
@@ -307,21 +294,22 @@ export async function chatWithBartenderStream(
   history: ChatTurn[] = [],
   onAssistantText?: (text: string) => void,
 ): Promise<BartenderReply> {
-  if (!BARTENDER_API) {
+  const config = await getRuntimeLlmConfig();
+  if (!config.chatBaseUrl) {
     throw new Error("Missing VITE_BARTENDER_URL");
   }
 
-  const apiKey = await getRuntimeApiKey();
+  const apiKey = config.apiKey || (await getRuntimeApiKey());
   if (!apiKey) {
     throw new Error(i18n.t("errors.missingApiKey"));
   }
 
-  const model = import.meta.env.VITE_BARTENDER_MODEL;
+  const model = config.chatModel;
   if (!model) {
     throw new Error("Missing VITE_ARK_ENDPOINT_ID");
   }
 
-  const openai = createOpenAiClient(apiKey, ModelType.Bartender);
+  const openai = createOpenAiClient(apiKey, config.chatBaseUrl);
   const stream = await openai.chat.completions.create({
     model,
     temperature: 0.7,
@@ -360,14 +348,18 @@ export async function createMemoryVector(
   memoryText: string,
   memoryContent: string,
 ): Promise<memoryEntry> {
-  const apiKey = await getRuntimeApiKey();
+  const config = await getRuntimeLlmConfig();
+  const apiKey = config.apiKey || (await getRuntimeApiKey());
   if (!apiKey) {
     throw new Error(i18n.t("errors.missingApiKey"));
   }
 
-  const model = import.meta.env.VITE_EMBD_MODEL;
+  const model = config.embeddingModel;
   if (!model) {
     throw new Error("Missing VITE_EMBD_MODEL");
+  }
+  if (!config.embeddingBaseUrl) {
+    throw new Error("Missing VITE_EMBD_URL");
   }
 
   const input: ArkMultimodalEmbeddingInput[] = [
@@ -376,7 +368,7 @@ export async function createMemoryVector(
       text: memoryText,
     },
   ];
-  const response = await fetch(buildEmbeddingUrl(EMBD_API), {
+  const response = await fetch(buildEmbeddingUrl(config.embeddingBaseUrl), {
     method: "POST",
     headers: {
       "content-type": "application/json",

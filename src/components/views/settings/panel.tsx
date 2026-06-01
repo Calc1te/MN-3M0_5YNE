@@ -12,7 +12,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/8bit/select";
-import { getStoredApiKey, saveStoredApiKey } from "@/lib/api-key";
+import {
+  buildDefaultAppConfig,
+  getAppConfig,
+  isFriendMode,
+  saveAppConfig,
+  type AppConfig,
+} from "@/lib/app-config";
 import { cn } from "@/lib/utils";
 
 export default function SettingsPanel() {
@@ -21,29 +27,32 @@ export default function SettingsPanel() {
   const language = i18n.resolvedLanguage ?? i18n.language;
   const isZh = Boolean(language && language.startsWith("zh"));
   const selectValue = language === "zh-CN" ? "zh-CN" : "en";
-  const [apiKey, setApiKey] = useState("");
-  const [apiKeyStatus, setApiKeyStatus] = useState<string | null>(null);
+  const [config, setConfig] = useState<AppConfig>(() => buildDefaultAppConfig());
+  const [configStatus, setConfigStatus] = useState<string | null>(null);
 
   useEffect(() => {
-    void getStoredApiKey()
-      .then(setApiKey)
+    void getAppConfig()
+      .then(setConfig)
       .catch((error: unknown) => {
-        console.error("Failed to load API key:", error);
+        console.error("Failed to load app config:", error);
       });
   }, []);
 
-  const handleSaveApiKey = async () => {
+  const handleSaveConfig = async () => {
     try {
-      const saved = await saveStoredApiKey(apiKey);
-      setApiKey(saved);
-      setApiKeyStatus(
-        saved.trim() ? t("ui.apiKeySaved") : t("ui.apiKeyCleared"),
-      );
+      const saved = await saveAppConfig(config);
+      setConfig(saved);
+      setConfigStatus(t("ui.configSaved") || "Configuration saved");
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "Failed to save API key";
-      setApiKeyStatus(message);
+        error instanceof Error ? error.message : "Failed to save configuration";
+      setConfigStatus(message);
     }
+  };
+
+  const updateConfig = (patch: Partial<AppConfig>) => {
+    setConfig((current) => ({ ...current, ...patch }));
+    setConfigStatus(null);
   };
 
   return (
@@ -69,37 +78,69 @@ export default function SettingsPanel() {
           </Select>
         </section>
 
-        <section className="flex w-full max-w-xl flex-col gap-3">
-          <span className="text-sm">{t("ui.apiKey")}</span>
-          <div className="flex w-full items-center gap-3">
+        {!isFriendMode && (
+          <section className="flex w-full max-w-xl flex-col gap-3">
+            <span className="text-sm">{t("ui.apiConfig")}</span>
             <Input
               type="password"
-              value={apiKey}
-              onChange={(event) => {
-                setApiKey(event.target.value);
-                setApiKeyStatus(null);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  void handleSaveApiKey();
-                }
-              }}
+              value={config.API_Key}
+              onChange={(event) => updateConfig({ API_Key: event.target.value })}
               placeholder={t("ui.apiKeyPlaceholder")}
               font="normal"
-              className="min-w-0 flex-1 bg-foreground text-background placeholder:text-background/60"
+              className="bg-foreground text-background placeholder:text-background/60"
             />
-            <Button
-              onClick={() => void handleSaveApiKey()}
+            <Input
+              value={config.Chat_Base_URL}
+              onChange={(event) =>
+                updateConfig({ Chat_Base_URL: event.target.value })
+              }
+              placeholder={t("ui.chatBaseUrlPlaceholder")}
               font="normal"
-              className="h-9 shrink-0 px-4 text-background"
-            >
-              {t("ui.apiKeySave")}
-            </Button>
-          </div>
-          {apiKeyStatus && (
-            <div className="text-xs text-foreground/70">{apiKeyStatus}</div>
-          )}
-        </section>
+              className="bg-foreground text-background placeholder:text-background/60"
+            />
+            <Input
+              value={config.Chat_Model}
+              onChange={(event) =>
+                updateConfig({ Chat_Model: event.target.value })
+              }
+              placeholder={t("ui.chatModelPlaceholder")}
+              font="normal"
+              className="bg-foreground text-background placeholder:text-background/60"
+            />
+            <Input
+              value={config.Embedding_Base_URL}
+              onChange={(event) =>
+                updateConfig({ Embedding_Base_URL: event.target.value })
+              }
+              placeholder={t("ui.embeddingBaseUrlPlaceholder")}
+              font="normal"
+              className="bg-foreground text-background placeholder:text-background/60"
+            />
+            <Input
+              value={config.Embedding_Model}
+              onChange={(event) =>
+                updateConfig({ Embedding_Model: event.target.value })
+              }
+              placeholder={t("ui.embeddingModelPlaceholder")}
+              font="normal"
+              className="bg-foreground text-background placeholder:text-background/60"
+            />
+            <div className="flex items-center gap-3">
+              <Button
+                onClick={() => void handleSaveConfig()}
+                font="normal"
+                className="h-9 shrink-0 px-4 text-background"
+              >
+                {t("ui.configSave")}
+              </Button>
+              {configStatus && (
+                <div className="text-xs text-foreground/70">
+                  {configStatus}
+                </div>
+              )}
+            </div>
+          </section>
+        )}
 
         <DirectorySelector />
       </div>

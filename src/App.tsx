@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   BrowserRouter as Router,
   Routes,
@@ -13,12 +13,18 @@ import Menu from "./components/views/menu.tsx";
 import About from "./components/views/settings/about.tsx";
 import BartenderMain from "./components/views/bartender_main.tsx";
 import DebugMenu from "./components/debug.tsx";
+import InitialSetup from "./components/views/initial_setup.tsx";
 import SettingsPanel from "./components/views/settings/panel.tsx";
 import {
   disableClick,
   enableClick,
   ghostModeRegionProps,
 } from "@/lib/ghost-mode";
+import {
+  getInitialSetupStatus,
+  simulateFirstInstall,
+  type AppConfig,
+} from "@/lib/app-config";
 
 function PanelTransition({ children }: { children: ReactNode }) {
   return (
@@ -82,6 +88,12 @@ function AppRoutes() {
 }
 
 function App() {
+  const [setupState, setSetupState] = useState<{
+    loading: boolean;
+    completed: boolean;
+    config?: AppConfig;
+  }>({ loading: true, completed: true });
+
   useEffect(() => {
     const handleWindowMouseEnter = () => {
       disableClick();
@@ -94,13 +106,46 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    void getInitialSetupStatus()
+      .then((status) => {
+        setSetupState({
+          loading: false,
+          completed: simulateFirstInstall ? false : status.completed,
+          config: status.config,
+        });
+      })
+      .catch((error: unknown) => {
+        console.warn("Failed to load initial setup status:", error);
+        setSetupState({ loading: false, completed: true });
+      });
+  }, []);
+
+  if (setupState.loading) {
+    return null;
+  }
+
+  const shouldShowSetup = !setupState.completed;
+
   return (
     <Router>
-      <Menu>
-        <div className="min-h-screen w-full">
-          <AppRoutes />
-        </div>
-      </Menu>
+      {shouldShowSetup ? (
+        <InitialSetup
+          initialConfig={setupState.config}
+          onComplete={() =>
+            setSetupState((current) => ({
+              ...current,
+              completed: true,
+            }))
+          }
+        />
+      ) : (
+        <Menu>
+          <div className="min-h-screen w-full">
+            <AppRoutes />
+          </div>
+        </Menu>
+      )}
     </Router>
   );
 }

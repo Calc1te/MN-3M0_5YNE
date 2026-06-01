@@ -19,13 +19,14 @@ use std::{
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
-use tauri::{Manager, PhysicalPosition, Position, WebviewWindow};
+use tauri::{Manager, WebviewWindow};
 
 use chrono::prelude::*;
 use tower_http::cors::CorsLayer;
 use vector_db::lance::{self, MEMORY_VECTOR_DIMS, MemoryRecord};
 
 const DEFAULT_MAX_CHARS: usize = 2000;
+const BOOTSTRAP_FILE_NAME: &str = "bootstrap.json";
 
 #[derive(Clone)]
 struct ApiState;
@@ -139,7 +140,7 @@ static CURRENT_BASE_DIR: OnceLock<Mutex<PathBuf>> = OnceLock::new();
 static STARTUP_CONTEXT: OnceLock<BarConfig> = OnceLock::new();
 
 fn current_base_dir() -> PathBuf {
-    let default_dir = dirs::desktop_dir().unwrap_or(".".into());
+    let default_dir = dirs::desktop_dir().unwrap_or_else(|| ".".into());
     CURRENT_BASE_DIR
         .get_or_init(|| Mutex::new(default_dir.clone()))
         .lock()
@@ -148,9 +149,7 @@ fn current_base_dir() -> PathBuf {
 }
 
 fn bar_root_dir() -> Result<PathBuf, String> {
-    let root = env::current_dir()
-        .map_err(|e| format!("Failed to resolve current directory for .bar: {e}"))?
-        .join(".bar");
+    let root = resolve_bar_root_parent()?.join(".bar");
     fs::create_dir_all(&root)
         .map_err(|e| format!("Failed to create bar directory {}: {e}", root.display()))?;
     Ok(root)
@@ -164,10 +163,13 @@ fn shaker_root_dir() -> Result<PathBuf, String> {
 }
 
 fn config_root_dir() -> Result<PathBuf, String> {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".bar");
-    fs::create_dir_all(&root)
-        .map_err(|e| format!("Failed to create config directory {}: {e}", root.display()))?;
-    Ok(root)
+    bar_root_dir()
+}
+
+#[derive(Clone, Serialize, Deserialize, Default)]
+struct BootstrapConfig {
+    #[serde(rename = "Bar_Root_Parent", default)]
+    bar_root_parent: String,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -177,13 +179,30 @@ struct BarConfig {
     #[serde(rename = "Last_Activated", default)]
     last_activated: i64,
     #[serde(
-        rename = "Bar_Path",
+        rename = "Base_Dir",
+        alias = "Bar_Path",
         default,
-        deserialize_with = "deserialize_bar_path"
+        deserialize_with = "deserialize_path_string"
     )]
-    bar_path: String,
+    base_dir: String,
+    #[serde(
+        rename = "Bar_Root_Parent",
+        default,
+        deserialize_with = "deserialize_path_string"
+    )]
+    bar_root_parent: String,
     #[serde(rename = "API_Key", default)]
     api_key: String,
+    #[serde(rename = "Chat_Base_URL", default)]
+    chat_base_url: String,
+    #[serde(rename = "Chat_Model", default)]
+    chat_model: String,
+    #[serde(rename = "Embedding_Base_URL", default)]
+    embedding_base_url: String,
+    #[serde(rename = "Embedding_Model", default)]
+    embedding_model: String,
+    #[serde(rename = "Setup_Completed", default)]
+    setup_completed: bool,
 }
 
 fn default_user_name() -> String {
@@ -195,13 +214,19 @@ impl Default for BarConfig {
         Self {
             name: default_user_name(),
             last_activated: 0,
-            bar_path: String::new(),
+            base_dir: String::new(),
+            bar_root_parent: String::new(),
             api_key: String::new(),
+            chat_base_url: String::new(),
+            chat_model: String::new(),
+            embedding_base_url: String::new(),
+            embedding_model: String::new(),
+            setup_completed: false,
         }
     }
 }
 
-fn deserialize_bar_path<'de, D>(deserializer: D) -> Result<String, D::Error>
+fn deserialize_path_string<'de, D>(deserializer: D) -> Result<String, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -209,8 +234,57 @@ where
     match value {
         serde_json::Value::String(value) => Ok(value),
         serde_json::Value::Number(_) | serde_json::Value::Null => Ok(String::new()),
-        _ => Err(SerdeError::custom("Bar_Path must be a string")),
+        _ => Err(SerdeError::custom("path value must be a string")),
     }
+}
+
+fn bootstrap_dir() -> Result<PathBuf, String> {
+    let base = dirs::config_dir()
+        .or_else(dirs::home_dir)
+        .ok_or_else(|| "Failed to resolve user config directory".to_string())?;
+    let dir = base.join("B4-rt_3n-der");
+    fs::create_dir_all(&dir).map_err(|e| {
+        format!(
+            "Failed to create bootstrap directory {}: {e}",
+            dir.display()
+        )
+    })?;
+    Ok(dir)
+}
+
+fn bootstrap_path() -> Result<PathBuf, String> {
+    Ok(bootstrap_dir()?.join(BOOTSTRAP_FILE_NAME))
+}
+
+fn read_bootstrap_config() -> Result<BootstrapConfig, String> {
+    let path = bootstrap_path()?;
+    if !path.exists() {
+        return Ok(BootstrapConfig::default());
+    }
+    let bytes =
+        fs::read(&path).map_err(|e| format!("Failed to read bootstrap {}: {e}", path.display()))?;
+    serde_json::from_slice(&bytes)
+        .map_err(|e| format!("Failed to parse bootstrap {}: {e}", path.display()))
+}
+
+fn write_bootstrap_config(config: &BootstrapConfig) -> Result<(), String> {
+    let path = bootstrap_path()?;
+    let bytes = serde_json::to_vec_pretty(config)
+        .map_err(|e| format!("Failed to serialize bootstrap {}: {e}", path.display()))?;
+    fs::write(&path, bytes)
+        .map_err(|e| format!("Failed to write bootstrap {}: {e}", path.display()))
+}
+
+fn legacy_bar_root_parent() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+}
+
+fn resolve_bar_root_parent() -> Result<PathBuf, String> {
+    let bootstrap = read_bootstrap_config()?;
+    if !bootstrap.bar_root_parent.trim().is_empty() {
+        return Ok(PathBuf::from(bootstrap.bar_root_parent));
+    }
+    Ok(legacy_bar_root_parent())
 }
 
 fn config_path() -> Result<PathBuf, String> {
@@ -220,7 +294,9 @@ fn config_path() -> Result<PathBuf, String> {
 fn read_config() -> Result<BarConfig, String> {
     let path = config_path()?;
     if !path.exists() {
-        return Ok(BarConfig::default());
+        let mut config = BarConfig::default();
+        config.bar_root_parent = resolve_bar_root_parent()?.to_string_lossy().into_owned();
+        return Ok(config);
     }
     let bytes =
         fs::read(&path).map_err(|e| format!("Failed to read config {}: {e}", path.display()))?;
@@ -248,8 +324,11 @@ where
 fn initialize_startup_context() -> Result<BarConfig, String> {
     let mut config = read_config()?;
     let previous_last = config.last_activated;
-    if config.bar_path.trim().is_empty() {
-        config.bar_path = current_base_dir().to_string_lossy().into_owned();
+    if config.base_dir.trim().is_empty() {
+        config.base_dir = current_base_dir().to_string_lossy().into_owned();
+    }
+    if config.bar_root_parent.trim().is_empty() {
+        config.bar_root_parent = resolve_bar_root_parent()?.to_string_lossy().into_owned();
     }
 
     let updated = BarConfig {
@@ -257,6 +336,7 @@ fn initialize_startup_context() -> Result<BarConfig, String> {
         ..config.clone()
     };
     write_config(&updated)?;
+    set_current_base_dir(PathBuf::from(&updated.base_dir));
 
     let mut context = updated;
     context.last_activated = previous_last;
@@ -287,6 +367,11 @@ fn set_api_key_internal(api_key: String) -> Result<String, String> {
 
 fn get_api_key_internal() -> Result<String, String> {
     Ok(read_config()?.api_key)
+}
+
+fn set_current_base_dir(path: PathBuf) {
+    let base = CURRENT_BASE_DIR.get_or_init(|| Mutex::new(path.clone()));
+    *base.lock().unwrap() = path;
 }
 
 fn memory_db_dir() -> Result<PathBuf, String> {
@@ -681,14 +766,61 @@ fn change_base_directory_internal(path: String) -> Result<String, String> {
     let canonical = validate_base_dir(&path)?;
 
     update_config(|mut config| {
-        config.bar_path = canonical.to_string_lossy().into_owned();
+        config.base_dir = canonical.to_string_lossy().into_owned();
         Ok(config)
     })?;
 
-    let base = CURRENT_BASE_DIR.get_or_init(|| Mutex::new(canonical.clone()));
-    *base.lock().unwrap() = canonical.clone();
+    set_current_base_dir(canonical.clone());
 
     Ok(canonical.to_string_lossy().into_owned())
+}
+
+fn change_bar_root_parent_internal(path: String) -> Result<String, String> {
+    let canonical = validate_base_dir(&path)?;
+    let mut config = read_config()?;
+    config.bar_root_parent = canonical.to_string_lossy().into_owned();
+
+    let next_bar_root = canonical.join(".bar");
+    fs::create_dir_all(&next_bar_root).map_err(|e| {
+        format!(
+            "Failed to create bar directory {}: {e}",
+            next_bar_root.display()
+        )
+    })?;
+
+    write_bootstrap_config(&BootstrapConfig {
+        bar_root_parent: config.bar_root_parent.clone(),
+    })?;
+    write_config(&config)?;
+
+    Ok(config.bar_root_parent)
+}
+
+fn save_app_config_internal(mut config: BarConfig) -> Result<BarConfig, String> {
+    if config.name.trim().is_empty() {
+        config.name = default_user_name();
+    }
+    if config.bar_root_parent.trim().is_empty() {
+        config.bar_root_parent = resolve_bar_root_parent()?.to_string_lossy().into_owned();
+    } else {
+        let canonical = validate_base_dir(&config.bar_root_parent)?;
+        config.bar_root_parent = canonical.to_string_lossy().into_owned();
+    }
+    if !config.base_dir.trim().is_empty() {
+        let canonical = validate_base_dir(&config.base_dir)?;
+        config.base_dir = canonical.to_string_lossy().into_owned();
+    }
+
+    write_bootstrap_config(&BootstrapConfig {
+        bar_root_parent: config.bar_root_parent.clone(),
+    })?;
+    write_config(&config)?;
+
+    if !config.base_dir.trim().is_empty() {
+        set_current_base_dir(PathBuf::from(&config.base_dir));
+    }
+
+    Ok(config)
 }
 
 fn normalize_memory_vector(vector: Option<Vec<f32>>, _text: &str) -> Result<Vec<f32>, String> {
@@ -768,6 +900,11 @@ fn change_base_directory(path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+fn change_bar_root_parent(path: String) -> Result<String, String> {
+    change_bar_root_parent_internal(path)
+}
+
+#[tauri::command]
 fn set_user_name(name: String) -> Result<String, String> {
     set_user_name_internal(name)
 }
@@ -780,6 +917,39 @@ fn set_api_key(api_key: String) -> Result<String, String> {
 #[tauri::command]
 fn get_api_key() -> Result<String, String> {
     get_api_key_internal()
+}
+
+#[tauri::command]
+fn get_app_config() -> Result<BarConfig, String> {
+    read_config()
+}
+
+#[tauri::command]
+fn save_app_config(config: BarConfig) -> Result<BarConfig, String> {
+    save_app_config_internal(config)
+}
+
+#[tauri::command]
+fn complete_initial_setup(config: BarConfig) -> Result<BarConfig, String> {
+    let mut next = config;
+    next.setup_completed = true;
+    save_app_config_internal(next)
+}
+
+#[derive(Serialize)]
+struct InitialSetupStatus {
+    completed: bool,
+    config: BarConfig,
+}
+
+#[tauri::command]
+fn get_initial_setup_status() -> Result<InitialSetupStatus, String> {
+    let config = read_config()?;
+    let legacy_completed = !config.base_dir.trim().is_empty() && !config.api_key.trim().is_empty();
+    Ok(InitialSetupStatus {
+        completed: config.setup_completed || legacy_completed,
+        config,
+    })
 }
 
 #[tauri::command]
@@ -991,19 +1161,9 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
-                if let Ok(Some(monitor)) = window.current_monitor() {
-                    let screen_size = monitor.size();
-                    let window_size = window.outer_size().unwrap_or_default();
-                    let x = screen_size.width.saturating_sub(window_size.width) - 10;
-                    let y = screen_size.height.saturating_sub(window_size.height) - 100;
-
-                    // window.set_position(Position::Physical(PhysicalPosition {
-                    //     x :x as i32,
-                    //     y :y as i32
-                    // })).unwrap();
-                }
                 window.show().unwrap();
             }
             Ok(())
@@ -1015,9 +1175,14 @@ pub fn run() {
             finalize_drink,
             permanently_delete_base,
             change_base_directory,
+            change_bar_root_parent,
             set_user_name,
             set_api_key,
             get_api_key,
+            get_app_config,
+            save_app_config,
+            complete_initial_setup,
+            get_initial_setup_status,
             get_startup_context,
             add_memory,
             retrive_memory,

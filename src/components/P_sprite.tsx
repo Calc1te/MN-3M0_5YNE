@@ -10,10 +10,10 @@ import {
 import "@/components/ui/8bit/styles/retro.css";
 
 const SPRITE_MAP: Record<BartenderState, string> = {
-  idle: "/assets/sprites/idle_placeholder.jpg",
-  shaking: "/assets/sprites/idle_placeholder.jpg",
-  smoking: "/assets/sprites/idle_placeholder.jpg",
-  griefing: "/assets/sprites/idle_placeholder.jpg",
+  idle: "/assets/sprites/idle.gif",
+  shaking: "/assets/sprites/shaking.gif",
+  smoking: "/assets/sprites/smoking.gif",
+  lookingAtYou: "/assets/sprites/lookingatyou.gif",
 };
 
 export interface PSpriteProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -72,7 +72,7 @@ export default function PSprite({
         <img
           src={spriteSrc}
           alt={ariaLabel}
-          className="pixelated block max-w-full"
+          className="pixelated block h-auto w-full max-w-full"
           draggable={false}
         />
       )}

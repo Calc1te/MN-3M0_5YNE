@@ -2,7 +2,7 @@ export const BARTENDER_STATES = [
   "idle",
   "shaking",
   "smoking",
-  "griefing",
+  "lookingAtYou",
 ] as const;
 
 export type BartenderState = (typeof BARTENDER_STATES)[number];
@@ -25,8 +25,9 @@ export function onBartenderStateChange(
 
 export function normalizeBartenderState(value: string): BartenderState {
   const trimmed = value.trim().toLowerCase();
-  if (isBartenderState(trimmed)) {
-    return trimmed;
+  const aliased = trimmed === "lookingatyou" ? "lookingAtYou" : trimmed;
+  if (isBartenderState(aliased)) {
+    return aliased;
   }
   throw new Error(
     `Unknown bartender state: ${value}. Expected one of ${BARTENDER_STATES.join(", ")}.`,

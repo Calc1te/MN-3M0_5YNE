@@ -1,22 +1,43 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/8bit/button";
-import { Input } from "@/components/ui/8bit/input";
 import { cn } from "@/lib/utils";
+import { getAppConfig } from "@/lib/app-config";
 
 export default function DirectorySelector() {
   const { t } = useTranslation();
-  const [inputPath, setInputPath] = useState<string>("");
   const [currentPath, setCurrentPath] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  const handleChangeDirectory = async () => {
-    if (!inputPath.trim()) {
-      setError(t("ui.directoryRequired") || "Please enter a directory path");
+  useEffect(() => {
+    void getAppConfig()
+      .then((config) => setCurrentPath(config.Base_Dir || ""))
+      .catch((err: unknown) => {
+        console.error("Failed to load current directory:", err);
+      });
+  }, []);
+
+  const handleChooseDirectory = async () => {
+    let selected: string | null;
+    try {
+      selected = await open({
+        directory: true,
+        multiple: false,
+        title: t("ui.directorySelector") || "Base Directory",
+      });
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : "Failed to open directory picker";
+      setError(errorMessage);
+      return;
+    }
+
+    if (typeof selected !== "string") {
       return;
     }
 
@@ -27,12 +48,13 @@ export default function DirectorySelector() {
     try {
       // Call the backend to validate and change directory
       const result = await invoke<string>("change_base_directory", {
-        path: inputPath,
+        path: selected,
       });
 
       setCurrentPath(result);
-      setInputPath("");
-      setSuccess(`${t("ui.directoryChanged") || "Directory changed to"}: ${result}`);
+      setSuccess(
+        `${t("ui.directoryChanged") || "Directory changed to"}: ${result}`,
+      );
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : "Unknown error occurred";
@@ -68,29 +90,18 @@ export default function DirectorySelector() {
       )}
 
       <div className="flex w-full items-center gap-3">
-        <Input
-          type="text"
-          value={inputPath}
-          onChange={(e) => setInputPath(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !isLoading) {
-              void handleChangeDirectory();
-            }
-          }}
-          placeholder={t("ui.directoryPlaceholder") || "Enter directory path..."}
-          disabled={isLoading}
-          font="normal"
-          className="min-w-0 flex-1 bg-foreground text-background placeholder:text-background/60"
-        />
+        <div className="min-w-0 flex-1 truncate border-y-6 border-foreground bg-foreground px-3 py-1.5 text-sm text-background">
+          {currentPath || t("ui.directoryUnset") || "No directory selected"}
+        </div>
         <Button
-          onClick={handleChangeDirectory}
-          disabled={isLoading || !inputPath.trim()}
+          onClick={() => void handleChooseDirectory()}
+          disabled={isLoading}
           font="normal"
           className={cn("h-9 shrink-0 px-4 text-background", isLoading && "opacity-70")}
         >
           {isLoading
             ? t("ui.directoryChanging") || "Changing..."
-            : t("ui.directoryChange") || "Change"}
+            : t("ui.directoryChoose") || "Choose"}
         </Button>
       </div>
     </section>

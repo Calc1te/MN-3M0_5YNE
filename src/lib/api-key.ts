@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { getRuntimeLlmConfig, isFriendMode } from "@/lib/app-config";
 
 export async function getStoredApiKey(): Promise<string> {
   return invoke<string>("get_api_key");
@@ -9,6 +10,10 @@ export async function saveStoredApiKey(apiKey: string): Promise<string> {
 }
 
 export async function getRuntimeApiKey(): Promise<string> {
-  const storedApiKey = await getStoredApiKey();
-  return storedApiKey.trim() || import.meta.env.VITE_BARTENDER_LLM_API_KEY || "";
+  if (isFriendMode) {
+    return import.meta.env.VITE_BARTENDER_LLM_API_KEY || "";
+  }
+
+  const config = await getRuntimeLlmConfig();
+  return config.apiKey;
 }
