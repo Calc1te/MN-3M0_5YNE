@@ -12,6 +12,11 @@ import {
 import PDialog from "@/components/P_dialog";
 import PSprite from "@/components/P_sprite";
 import UserInput from "@/components/user_input";
+import {
+  clearBartenderHistory,
+  getBartenderHistory,
+  setBartenderHistory,
+} from "@/lib/bartender-history";
 import { ghostModeRegionProps } from "@/lib/ghost-mode";
 import { cn } from "@/lib/utils";
 import {
@@ -33,7 +38,9 @@ export default function BartenderMain({
   const isZh = Boolean(language && language.startsWith("zh"));
   const chatFontClass = isZh ? "font-chat-cn" : "font-chat-en";
   const [input, setInput] = useState("");
-  const [history, setHistory] = useState<ChatTurn[]>([]);
+  const [history, setHistory] = useState<ChatTurn[]>(() =>
+    getBartenderHistory(),
+  );
   const [reply, setReply] = useState("");
   const [toolStatus, setToolStatus] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -133,11 +140,12 @@ export default function BartenderMain({
         setReply(finalReply.assistant);
         setIsSpeaking(false);
 
-        setHistory([
+        setBartenderHistory([
           ...history,
           { role: "user", content: trimmed },
           { role: "assistant", content: finalReply.assistant },
         ]);
+        setHistory(getBartenderHistory());
         return;
       }
 
@@ -149,6 +157,7 @@ export default function BartenderMain({
           content: response.assistant,
         },
       ];
+      setBartenderHistory(newHistory);
       setHistory(newHistory);
     } catch (err) {
       const errorMessage =
@@ -162,6 +171,7 @@ export default function BartenderMain({
   };
 
   const handleClearHistory = () => {
+    clearBartenderHistory();
     setHistory([]);
     setInput("");
     setReply("");
@@ -192,7 +202,6 @@ export default function BartenderMain({
       />
       {toolStatus && (
         <div
-          {...ghostModeRegionProps}
           className={cn(
             "w-full text-right text-xs text-foreground/70",
             chatFontClass,
@@ -202,13 +211,13 @@ export default function BartenderMain({
         </div>
       )}
       <PSprite
-        className="p-sprite-container self-end" data-tauri-drag-region
+        className="p-sprite-container self-end"
+        data-tauri-drag-region
         {...ghostModeRegionProps}
       />
 
       {error && (
         <div
-          {...ghostModeRegionProps}
           className="w-full p-2 bg-destructive/20 text-destructive text-sm rounded"
         >
           {error}
@@ -232,7 +241,7 @@ export default function BartenderMain({
         inputProps={{ font: "normal" }}
         buttonProps={isZh ? { font: "normal" } : undefined}
       />
-      <div className="flex w-fit justify-end" {...ghostModeRegionProps}>
+      <div className="flex w-fit justify-end">
         <button
           onClick={handleClearHistory}
           className="px-3 py-2 bg-secondary text-secondary-foreground rounded text-sm hover:bg-secondary/90"

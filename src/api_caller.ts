@@ -402,6 +402,7 @@ export async function summarizeExitMemory(context: {
   language: string;
   baseDir?: string;
   barRootParent?: string;
+  history?: ChatTurn[];
 }): Promise<string> {
   const config = await getRuntimeLlmConfig();
   if (!config.chatBaseUrl) {
@@ -415,6 +416,7 @@ export async function summarizeExitMemory(context: {
   }
 
   const isZh = context.language.startsWith("zh");
+  const history = (context.history ?? []);
   const openai = createOpenAiClient(config.apiKey, config.chatBaseUrl);
   const completion = await openai.chat.completions.create({
     model: config.chatModel,
@@ -430,9 +432,10 @@ export async function summarizeExitMemory(context: {
         role: "user",
         content: JSON.stringify({
           language: context.language,
-          baseDir: context.baseDir || "",
-          barRootParent: context.barRootParent || "",
+          baseDir: context.baseDir,
+          barRootParent: context.barRootParent,
           exitedAt: new Date().toISOString(),
+          recentConversation: history,
         }),
       },
     ],

@@ -40,6 +40,14 @@ function PanelTransition({ children }: { children: ReactNode }) {
   );
 }
 
+function SolidClickSurface({ children }: { children: ReactNode }) {
+  return (
+    <div {...ghostModeRegionProps}>
+      {children}
+    </div>
+  );
+}
+
 function AppRoutes({
   showSetupCompletePrompt,
   onSetupCompletePromptShown,
@@ -75,9 +83,9 @@ function AppRoutes({
           path="/settings"
           element={
             <PanelTransition>
-              <div onMouseEnter={enableClick} onMouseLeave={disableClick}>
+              <SolidClickSurface>
                 <SettingsPanel />
-              </div>
+              </SolidClickSurface>
             </PanelTransition>
           }
         />
@@ -85,9 +93,9 @@ function AppRoutes({
           path="/about"
           element={
             <PanelTransition>
-              <div onMouseEnter={enableClick} onMouseLeave={disableClick}>
+              <SolidClickSurface>
                 <About />
-              </div>
+              </SolidClickSurface>
             </PanelTransition>
           }
         />
@@ -108,10 +116,22 @@ function App() {
     const handleWindowMouseEnter = () => {
       disableClick();
     };
+    const handleWindowDeactivation = () => {
+      enableClick();
+    };
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        enableClick();
+      }
+    };
 
     window.addEventListener("mouseenter", handleWindowMouseEnter);
+    window.addEventListener("blur", handleWindowDeactivation);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
       window.removeEventListener("mouseenter", handleWindowMouseEnter);
+      window.removeEventListener("blur", handleWindowDeactivation);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
       enableClick();
     };
   }, []);
@@ -140,16 +160,18 @@ function App() {
   return (
     <Router>
       {shouldShowSetup ? (
-        <InitialSetup
-          initialConfig={setupState.config}
-          onComplete={() => {
-            setShowSetupCompletePrompt(true);
-            setSetupState((current) => ({
+        <SolidClickSurface>
+          <InitialSetup
+            initialConfig={setupState.config}
+            onComplete={() => {
+              setShowSetupCompletePrompt(true);
+              setSetupState((current) => ({
                 ...current,
                 completed: true,
-            }));
-          }}
-        />
+              }));
+            }}
+          />
+        </SolidClickSurface>
       ) : (
         <Menu>
           <div className="min-h-screen w-full">

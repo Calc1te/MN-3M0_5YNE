@@ -22,6 +22,7 @@ import {
   saveAppConfig,
   type AppConfig,
 } from "@/lib/app-config";
+import { getBartenderHistory } from "@/lib/bartender-history";
 import { cn } from "@/lib/utils";
 
 export default function SettingsPanel() {
@@ -75,6 +76,7 @@ export default function SettingsPanel() {
           language,
           baseDir: savedConfig.Base_Dir,
           barRootParent: savedConfig.Bar_Root_Parent,
+          history: getBartenderHistory(),
         });
         const memory = await createMemoryVector(summary, summary);
         await invoke("add_memory", {

@@ -1172,6 +1172,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_shadow(false);
                 window.show().unwrap();
             }
             Ok(())

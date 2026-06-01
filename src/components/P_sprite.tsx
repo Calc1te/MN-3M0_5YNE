@@ -19,6 +19,7 @@ const SPRITE_MAP: Record<BartenderState, string> = {
 export interface PSpriteProps extends React.HTMLAttributes<HTMLDivElement> {
   state?: BartenderState;
   onStateChange?: (state: BartenderState) => void;
+  "data-tauri-drag-region"?: boolean | "";
 }
 
 export default function PSprite({
@@ -58,6 +59,10 @@ export default function PSprite({
   const ariaLabel =
     props["aria-label"] ?? `Bartender sprite (${resolvedState})`;
   const spriteSrc = SPRITE_MAP[resolvedState];
+  const dragRegionProps =
+    props["data-tauri-drag-region"] !== undefined
+      ? { "data-tauri-drag-region": true }
+      : undefined;
 
   return (
     <div
@@ -70,9 +75,10 @@ export default function PSprite({
     >
       {children ?? (
         <img
+          {...dragRegionProps}
           src={spriteSrc}
           alt={ariaLabel}
-          className="pixelated block h-auto w-full max-w-full"
+          className="pixelated pointer-events-none block h-auto w-full max-w-full"
           draggable={false}
         />
       )}
