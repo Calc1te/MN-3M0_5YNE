@@ -13,7 +13,6 @@ import PDialog from "@/components/P_dialog";
 import PSprite from "@/components/P_sprite";
 import UserInput from "@/components/user_input";
 import {
-  clearBartenderHistory,
   getBartenderHistory,
   setBartenderHistory,
 } from "@/lib/bartender-history";
@@ -170,16 +169,6 @@ export default function BartenderMain({
     }
   };
 
-  const handleClearHistory = () => {
-    clearBartenderHistory();
-    setHistory([]);
-    setInput("");
-    setReply("");
-    setToolStatus("");
-    setIsSpeaking(false);
-    setError(null);
-  };
-
   return (
     <section
       className={cn(
@@ -232,7 +221,7 @@ export default function BartenderMain({
         placeholder={t("ui.inputPlaceholder") || "Enter message..."}
         disabled={isLoading}
         buttonLabel={isLoading ? t("utils.sending") : t("utils.send")}
-        buttonClassName="w-20 h-8 text-white"
+        buttonClassName={cn("w-20 h-8 text-white", !isZh && "text-[9px]")} // why english font so big bruh
         className="w-full justify-end"
         inputClassName={cn(
           "bg-foreground text-background placeholder:text-background/60",
@@ -241,14 +230,6 @@ export default function BartenderMain({
         inputProps={{ font: "normal" }}
         buttonProps={isZh ? { font: "normal" } : undefined}
       />
-      <div className="flex w-fit justify-end">
-        <button
-          onClick={handleClearHistory}
-          className="px-3 py-2 bg-secondary text-secondary-foreground rounded text-sm hover:bg-secondary/90"
-        >
-          Clear
-        </button>
-      </div>
     </section>
   );
 }

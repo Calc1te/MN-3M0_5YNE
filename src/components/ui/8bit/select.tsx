@@ -75,20 +75,23 @@ function SelectTrigger({ children, ...props }: BitSelectTriggerProps) {
   return (
     <div
       className={cn(
-        "relative border-y-6 border-foreground dark:border-ring",
         className,
+        "relative border-y-6 border-[#483D8B] bg-black text-white",
         font !== "normal" && "retro"
       )}
     >
       <ShadcnSelectTrigger
         {...props}
-        className={cn("rounded-none ring-0 w-full border-0", className)}
+        className={cn(
+          className,
+          "w-full rounded-none border-0 bg-black text-white ring-0 focus-visible:border-[#483D8B] focus-visible:ring-[#483D8B]/50 data-placeholder:text-white/60 [&_svg]:text-white"
+        )}
       >
         {children}
       </ShadcnSelectTrigger>
 
       <div
-        className="absolute inset-0 border-x-6 -mx-1.5 border-foreground dark:border-ring pointer-events-none"
+        className="pointer-events-none absolute inset-0 -mx-1.5 border-x-6 border-[#483D8B]"
         aria-hidden="true"
       />
     </div>
@@ -113,7 +116,7 @@ function SelectContent({
       className={cn(
         font !== "normal" && "retro",
         className,
-        "relative rounded-none border-4 border-foreground dark:border-ring -ml-1 mt-1"
+        "relative -ml-1 mt-1 rounded-none border-4 border-[#483D8B] bg-black text-white"
       )}
       {...props}
     >
@@ -138,7 +141,7 @@ function SelectItem({
     <ShadcnSelectItem
       className={cn(
         className,
-        "rounded-none border-y-3 border-dashed border-ring/0 hover:border-foreground dark:hover:border-ring"
+        "rounded-none border-y-3 border-dashed border-transparent text-white focus:bg-[#483D8B] focus:text-white hover:border-[#483D8B]"
       )}
       {...props}
     >

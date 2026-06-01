@@ -105,6 +105,9 @@ function AppRoutes({
 }
 
 function App() {
+  const { i18n } = useTranslation();
+  const language = i18n.resolvedLanguage ?? i18n.language;
+  const isZh = Boolean(language && language.startsWith("zh"));
   const [setupState, setSetupState] = useState<{
     loading: boolean;
     completed: boolean;
@@ -135,6 +138,17 @@ function App() {
       enableClick();
     };
   }, []);
+
+  useEffect(() => {
+    document.body.classList.toggle("font-ui-cn", isZh);
+    document.body.classList.toggle("font-ui-en", !isZh);
+    document.documentElement.lang = language || "en";
+
+    return () => {
+      document.body.classList.remove("font-ui-cn");
+      document.body.classList.remove("font-ui-en");
+    };
+  }, [isZh, language]);
 
   useEffect(() => {
     void getInitialSetupStatus()

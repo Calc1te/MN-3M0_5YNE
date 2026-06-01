@@ -30,21 +30,21 @@ function Input({ ...props }: BitInputProps) {
   return (
     <div
       className={cn(
-        "relative border-y-6 border-foreground dark:border-ring !p-0 flex items-center",
-        className
+        className,
+        "relative flex items-center border-y-6 border-[#483D8B] bg-black !p-0 text-white"
       )}
     >
       <ShadcnInput
         {...props}
         className={cn(
-          "rounded-none ring-0 !w-full",
+          className,
+          "rounded-none border-0 bg-black text-white ring-0 placeholder:text-white/60 focus-visible:border-[#483D8B] focus-visible:ring-[#483D8B]/50 disabled:bg-black/70",
           font !== "normal" && "retro",
-          className
         )}
       />
 
       <div
-        className="absolute inset-0 border-x-6 -mx-1.5 border-foreground dark:border-ring pointer-events-none"
+        className="pointer-events-none absolute inset-0 -mx-1.5 border-x-6 border-[#483D8B]"
         aria-hidden="true"
       />
     </div>

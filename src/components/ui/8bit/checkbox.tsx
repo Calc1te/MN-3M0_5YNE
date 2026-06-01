@@ -31,21 +31,21 @@ function Checkbox({ className, font, ...props }: BitCheckboxProps) {
   return (
     <div
       className={cn(
-        "relative flex items-center justify-center border-y-6 border-foreground dark:border-ring",
-        className
+        className,
+        "relative flex items-center justify-center border-y-6 border-[#483D8B] bg-black text-white"
       )}
     >
       <ShadcnCheckbox
         className={cn(
-          "rounded-none size-5 ring-0 border-none",
+          className,
+          "size-5 rounded-none border-none bg-black text-white ring-0 focus-visible:border-[#483D8B] focus-visible:ring-[#483D8B]/50 data-checked:bg-[#483D8B] data-checked:text-white",
           font !== "normal" && "retro",
-          className
         )}
         {...props}
       />
 
       <div
-        className="absolute inset-0 border-x-6 -mx-1.5 border-foreground dark:border-ring pointer-events-none"
+        className="pointer-events-none absolute inset-0 -mx-1.5 border-x-6 border-[#483D8B]"
         aria-hidden="true"
       />
     </div>

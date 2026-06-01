@@ -5,6 +5,13 @@ import { invoke } from "@tauri-apps/api/core";
 
 import { createMemoryVector, summarizeExitMemory } from "@/api_caller";
 import DirectorySelector from "@/components/directory-selector";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/8bit/button";
 import { Checkbox } from "@/components/ui/8bit/checkbox";
 import { Input } from "@/components/ui/8bit/input";
@@ -96,29 +103,29 @@ export default function SettingsPanel() {
   };
 
   return (
-    <main className={cn("container flex flex-col gap-6 ", isZh && "font-ui-cn")}>
-      <div className="flex items-center justify-between w-full">
-        <h1 className="text-lg font-semibold pl-6">{t("menu.settings")}</h1>
-        <div className="flex items-center gap-3">
-          <Button
-            font="normal"
-            onClick={() => navigate("/bartender-main")}
-            disabled={isExiting}
-          >
-            {t("ui.back")}
-          </Button>
-          <Button
-            font="normal"
-            onClick={() => void handleExit()}
-            disabled={isExiting}
-            className="text-background"
-          >
-            {t("ui.exit")}
-          </Button>
-        </div>
-      </div>
+    <main className={cn("container flex flex-col gap-6", isZh && "font-ui-cn")}>
+      <Card className="w-full max-w-3xl">
+        <CardHeader>
+          <CardTitle className="text-lg">{t("menu.settings")}</CardTitle>
+          <CardAction className="flex items-center gap-3">
+            <Button
+              font="normal"
+              onClick={() => navigate("/bartender-main")}
+              disabled={isExiting}
+            >
+              {t("ui.back")}
+            </Button>
+            <Button
+              font="normal"
+              onClick={() => void handleExit()}
+              disabled={isExiting}
+            >
+              {t("ui.exit")}
+            </Button>
+          </CardAction>
+        </CardHeader>
 
-      <div className="flex flex-col gap-6 pl-6 w-full">
+        <CardContent className="flex w-full flex-col gap-6">
         <section className="flex w-full max-w-xl flex-col gap-3">
           <label className="flex items-center gap-3 text-sm">
             <Checkbox
@@ -158,7 +165,6 @@ export default function SettingsPanel() {
               onChange={(event) => updateConfig({ API_Key: event.target.value })}
               placeholder={t("ui.apiKeyPlaceholder")}
               font="normal"
-              className="bg-foreground text-background placeholder:text-background/60"
             />
             <Input
               value={config.Chat_Base_URL}
@@ -167,7 +173,6 @@ export default function SettingsPanel() {
               }
               placeholder={t("ui.chatBaseUrlPlaceholder")}
               font="normal"
-              className="bg-foreground text-background placeholder:text-background/60"
             />
             <Input
               value={config.Chat_Model}
@@ -176,7 +181,6 @@ export default function SettingsPanel() {
               }
               placeholder={t("ui.chatModelPlaceholder")}
               font="normal"
-              className="bg-foreground text-background placeholder:text-background/60"
             />
             <Input
               value={config.Embedding_Base_URL}
@@ -185,7 +189,6 @@ export default function SettingsPanel() {
               }
               placeholder={t("ui.embeddingBaseUrlPlaceholder")}
               font="normal"
-              className="bg-foreground text-background placeholder:text-background/60"
             />
             <Input
               value={config.Embedding_Model}
@@ -194,13 +197,12 @@ export default function SettingsPanel() {
               }
               placeholder={t("ui.embeddingModelPlaceholder")}
               font="normal"
-              className="bg-foreground text-background placeholder:text-background/60"
             />
             <div className="flex items-center gap-3">
               <Button
                 onClick={() => void handleSaveConfig()}
                 font="normal"
-                className="h-9 shrink-0 px-4 text-background"
+                className="h-9 shrink-0 px-4"
               >
                 {t("ui.configSave")}
               </Button>
@@ -214,7 +216,8 @@ export default function SettingsPanel() {
         )}
 
         <DirectorySelector />
-      </div>
+        </CardContent>
+      </Card>
     </main>
   );
 }

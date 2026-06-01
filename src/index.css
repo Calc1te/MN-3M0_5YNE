@@ -27,6 +27,12 @@
   line-height: 1.45;
 }
 
+.font-ui-en {
+  font-family: "BartenderEN", monospace;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .font-chat-cn {
   font-family: "BartenderCN11", monospace;
   font-size: 10px;

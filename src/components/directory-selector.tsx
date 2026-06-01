@@ -90,14 +90,14 @@ export default function DirectorySelector() {
       )}
 
       <div className="flex w-full items-center gap-3">
-        <div className="min-w-0 flex-1 truncate border-y-6 border-foreground bg-foreground px-3 py-1.5 text-sm text-background">
+        <div className="min-w-0 flex-1 truncate border-y-6 border-[#483D8B] bg-black px-3 py-1.5 text-sm text-white">
           {currentPath || t("ui.directoryUnset") || "No directory selected"}
         </div>
         <Button
           onClick={() => void handleChooseDirectory()}
           disabled={isLoading}
           font="normal"
-          className={cn("h-9 shrink-0 px-4 text-background", isLoading && "opacity-70")}
+          className={cn("h-9 shrink-0 px-4", isLoading && "opacity-70")}
         >
           {isLoading
             ? t("ui.directoryChanging") || "Changing..."
