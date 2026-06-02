@@ -8,6 +8,8 @@
 
 调制饮料，改变人生。 | Time to mix drinks and change lives.
 
+[English Version](./docs/readme_en.md)
+
 ---
 
 B4-rt 3n-der，或者data bar，是一个基于 **Tauri v2** 架构构建的跨平台、透明无边框桌面应用程序。具体内容如下：
