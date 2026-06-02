@@ -506,6 +506,12 @@ export async function runMcpToolCallsDetailed(
 ): Promise<BartenderToolResult[]> {
   const results: BartenderToolResult[] = [];
   for (const call of calls) {
+    // change_state is a frontend-only tool, don't send it to the backend
+    if (call.tool === "change_state") {
+      results.push({ call, result: { state: call.args.state } });
+      continue;
+    }
+
     try {
       const result = await transport.callTool(call.tool, call.args);
       results.push({ call, result });

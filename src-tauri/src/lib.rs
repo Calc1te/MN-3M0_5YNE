@@ -1168,26 +1168,33 @@ pub fn run() {
     });
 
     tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_dialog::init())
-        .setup(|app| {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.set_shadow(false);
-                if let Ok(Some(monitor)) = window.current_monitor() {
-                    let screen_size = monitor.size();
-                    let window_size = window.outer_size().unwrap_or_default();
-                    let x = screen_size.width.saturating_sub(window_size.width) - 10;
-                    let y = screen_size.height.saturating_sub(window_size.height) - 100;
+    .plugin(tauri_plugin_opener::init())
+    .plugin(tauri_plugin_dialog::init())
+    .setup(|app| {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.set_shadow(false);
+            
+            if let Ok(Some(monitor)) = window.current_monitor() {
+                let screen_size = monitor.size();
+                let monitor_pos = monitor.position(); 
+                
+                let window_size = window.outer_size().unwrap_or_default();
+                
+                let offset_x = screen_size.width.saturating_sub(window_size.width) as i32 - 10;
+                let offset_y = screen_size.height.saturating_sub(window_size.height) as i32 - 100;
 
-                    window.set_position(Position::Physical(PhysicalPosition {
-                        x :x as i32,
-                        y :y as i32
-                    })).unwrap();
-                }
-                window.show().unwrap();
+                let global_x = monitor_pos.x + offset_x;
+                let global_y = monitor_pos.y + offset_y;
+
+                window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
+                    x: global_x,
+                    y: global_y
+                })).unwrap();
             }
-            Ok(())
-        })
+            window.show().unwrap();
+        }
+        Ok(())
+    })
         .invoke_handler(tauri::generate_handler![
             base_list,
             get_base,

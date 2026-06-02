@@ -10,7 +10,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { color } from "motion/react";
 
 export default function About() {
   const { t, i18n } = useTranslation();

@@ -46,6 +46,9 @@ export default function BartenderMain({
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Get the latest message from history or current reply
+  const displayedMessage = reply || (history.length > 0 && history[history.length - 1]?.role === "assistant" ? history[history.length - 1].content : "");
+
   useEffect(() => {
     if (!showSetupCompletePrompt) {
       return;
@@ -178,7 +181,7 @@ export default function BartenderMain({
     >
       <PDialog
         containerProps={ghostModeRegionProps}
-        value={reply}
+        value={displayedMessage}
         readOnly
         isSpeaking={isSpeaking}
         font="normal"
