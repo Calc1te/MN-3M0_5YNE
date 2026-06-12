@@ -19,14 +19,23 @@ import {
   onBartenderStateChange,
   type BartenderState,
 } from "@/uiControllers/bartender";
+import {
+  getIdleTriggerState,
+  onIdleTriggerStateChange,
+  type IdleTriggerState,
+} from "@/uiControllers/idle-trigger";
 
 export default function DebugMenu() {
   const { t, i18n } = useTranslation();
   const language = i18n.resolvedLanguage ?? i18n.language;
   const isZh = Boolean(language && language.startsWith("zh"));
   const [state, setState] = useState<BartenderState>(() => getBartenderState());
+  const [idleTrigger, setIdleTrigger] = useState<IdleTriggerState>(() =>
+    getIdleTriggerState(),
+  );
 
   useEffect(() => onBartenderStateChange(setState), []);
+  useEffect(() => onIdleTriggerStateChange(setIdleTrigger), []);
 
   const handleStateChange = (value: string) => {
     if (!isBartenderState(value)) {
@@ -34,6 +43,12 @@ export default function DebugMenu() {
     }
     setState(changeBartenderState(value));
   };
+
+  const countdownText = idleTrigger.running
+    ? t("ui.debugIdleCountdownRunning")
+    : !idleTrigger.enabled
+      ? t("ui.debugIdleCountdownDisabled")
+      : `${Math.floor(idleTrigger.remainingMs / 1000)}s`;
 
   return (
     <details
@@ -66,6 +81,14 @@ export default function DebugMenu() {
               ))}
             </SelectContent>
           </Select>
+        </section>
+        <section className="flex w-full max-w-xs flex-col gap-2">
+          <div className="text-sm font-medium">
+            {t("ui.debugIdleCountdown")}
+          </div>
+          <div className="border border-border rounded px-3 py-2 text-sm">
+            {countdownText}
+          </div>
         </section>
         <MemoryAdder />
       </div>

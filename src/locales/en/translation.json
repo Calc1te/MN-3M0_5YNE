@@ -27,13 +27,21 @@
     "embeddingModelPlaceholder": "Embedding model...",
     "configSave": "Save",
     "configSaved": "Configuration saved",
+    "autoSaveHint": "Settings here are saved automatically",
     "exit": "Exit",
     "rememberOnExit": "Let P clean up and remember this session on exit",
+    "alwaysOnTop": "Keep window always on top",
+    "idleAutoMixMinutes": "Idle auto-mix delay",
+    "minuteValue": "{{count}} min",
+    "off": "Off",
     "exitMemorySaving": "P is cleaning the bar...",
     "about": "This is about page",
     "debug": "Debug",
     "debugState": "Bartender state",
-    "debugStatePlaceholder": "Select state"
+    "debugStatePlaceholder": "Select state",
+    "debugIdleCountdown": "Auto-mix trigger countdown",
+    "debugIdleCountdownDisabled": "Disabled",
+    "debugIdleCountdownRunning": "Triggering"
   },
   "setup": {
     "title": "Initial Setup",

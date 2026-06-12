@@ -12,6 +12,10 @@ export interface AppConfig {
   Embedding_Model: string;
   Setup_Completed: boolean;
   Remember_On_Exit: boolean;
+  Always_On_Top: boolean;
+  Idle_Auto_Mix_Minutes: number;
+  Audio_Volume_BGM: number;
+  Audio_Volume_SE: number;
 }
 
 export interface InitialSetupStatus {
@@ -44,6 +48,10 @@ export function buildDefaultAppConfig(): AppConfig {
     Embedding_Model: "",
     Setup_Completed: false,
     Remember_On_Exit: false,
+    Always_On_Top: false,
+    Idle_Auto_Mix_Minutes: 10,
+    Audio_Volume_BGM: 0.5,
+    Audio_Volume_SE: 0.3,
   };
 }
 

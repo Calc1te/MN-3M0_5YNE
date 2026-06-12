@@ -19,7 +19,7 @@ use std::{
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
-use tauri::{AppHandle, Manager, WebviewWindow,PhysicalPosition, Position};
+use tauri::{AppHandle, Manager, WebviewWindow};
 
 use chrono::prelude::*;
 use tower_http::cors::CorsLayer;
@@ -205,10 +205,33 @@ struct BarConfig {
     setup_completed: bool,
     #[serde(rename = "Remember_On_Exit", default)]
     remember_on_exit: bool,
+    #[serde(rename = "Always_On_Top", default)]
+    always_on_top: bool,
+    #[serde(
+        rename = "Idle_Auto_Mix_Minutes",
+        default = "default_idle_auto_mix_minutes"
+    )]
+    idle_auto_mix_minutes: u64,
+    #[serde(rename = "Audio_Volume_BGM", default = "default_bgm_volume")]
+    audio_volume_bgm: f64,
+    #[serde(rename = "Audio_Volume_SE", default = "default_se_volume")]
+    audio_volume_se: f64,
 }
 
 fn default_user_name() -> String {
     "User".to_string()
+}
+
+fn default_bgm_volume() -> f64 {
+    0.5
+}
+
+fn default_idle_auto_mix_minutes() -> u64 {
+    10
+}
+
+fn default_se_volume() -> f64 {
+    0.3
 }
 
 impl Default for BarConfig {
@@ -225,6 +248,10 @@ impl Default for BarConfig {
             embedding_model: String::new(),
             setup_completed: false,
             remember_on_exit: false,
+            always_on_top: false,
+            idle_auto_mix_minutes: default_idle_auto_mix_minutes(),
+            audio_volume_bgm: default_bgm_volume(),
+            audio_volume_se: default_se_volume(),
         }
     }
 }
@@ -803,6 +830,7 @@ fn save_app_config_internal(mut config: BarConfig) -> Result<BarConfig, String> 
     if config.name.trim().is_empty() {
         config.name = default_user_name();
     }
+    config.idle_auto_mix_minutes = config.idle_auto_mix_minutes.min(120);
     if config.bar_root_parent.trim().is_empty() {
         config.bar_root_parent = resolve_bar_root_parent()?.to_string_lossy().into_owned();
     } else {
@@ -1042,6 +1070,13 @@ async fn set_ghost_mode(window: WebviewWindow, ignore: bool) {
 }
 
 #[tauri::command]
+fn set_always_on_top(window: WebviewWindow, always_on_top: bool) -> Result<(), String> {
+    window
+        .set_always_on_top(always_on_top)
+        .map_err(|error| format!("Failed to set always-on-top: {error}"))
+}
+
+#[tauri::command]
 fn quit_app(app: AppHandle) {
     app.exit(0);
 }
@@ -1172,6 +1207,9 @@ pub fn run() {
     .plugin(tauri_plugin_dialog::init())
     .setup(|app| {
         if let Some(window) = app.get_webview_window("main") {
+            if let Ok(config) = read_config() {
+                let _ = window.set_always_on_top(config.always_on_top);
+            }
             let _ = window.set_shadow(false);
             
             if let Ok(Some(monitor)) = window.current_monitor() {
@@ -1215,6 +1253,7 @@ pub fn run() {
             retrive_memory,
             get_time_and_date,
             set_ghost_mode,
+            set_always_on_top,
             quit_app
         ])
         .run(tauri::generate_context!())

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/8bit/button";
 import { Checkbox } from "@/components/ui/8bit/checkbox";
 import { Input } from "@/components/ui/8bit/input";
+import { Slider } from "@/components/ui/8bit/slider";
 import {
   Select,
   SelectContent,
@@ -29,6 +30,10 @@ import {
   saveAppConfig,
   type AppConfig,
 } from "@/lib/app-config";
+import {
+  readAudioVolumesFromConfig,
+  setRuntimeAudioVolumes,
+} from "@/lib/audio-settings";
 import { getBartenderHistory } from "@/lib/bartender-history";
 import { cn } from "@/lib/utils";
 
@@ -42,20 +47,35 @@ export default function SettingsPanel() {
   const [configStatus, setConfigStatus] = useState<string | null>(null);
   const [exitStatus, setExitStatus] = useState<string | null>(null);
   const [isExiting, setIsExiting] = useState(false);
+  const hasLoadedConfigRef = useRef(false);
+  const isAutoSavingRef = useRef(false);
+  const lastPersistedConfigRef = useRef("");
 
   useEffect(() => {
     void getAppConfig()
-      .then(setConfig)
+      .then((loadedConfig) => {
+        setConfig(loadedConfig);
+        setRuntimeAudioVolumes(readAudioVolumesFromConfig(loadedConfig));
+        lastPersistedConfigRef.current = JSON.stringify(loadedConfig);
+        hasLoadedConfigRef.current = true;
+      })
       .catch((error: unknown) => {
         console.error("Failed to load app config:", error);
       });
   }, []);
 
-  const handleSaveConfig = async () => {
+  const persistConfig = async (
+    nextConfig: AppConfig,
+    successMessage?: string,
+  ) => {
     try {
-      const saved = await saveAppConfig(config);
+      const saved = await saveAppConfig(nextConfig);
       setConfig(saved);
-      setConfigStatus(t("ui.configSaved") || "Configuration saved");
+      setRuntimeAudioVolumes(readAudioVolumesFromConfig(saved));
+      lastPersistedConfigRef.current = JSON.stringify(saved);
+      if (successMessage) {
+        setConfigStatus(successMessage);
+      }
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Failed to save configuration";
@@ -63,11 +83,45 @@ export default function SettingsPanel() {
     }
   };
 
+  const handleSaveConfig = async () => {
+    await persistConfig(config, t("ui.configSaved") || "Configuration saved");
+  };
+
   const updateConfig = (patch: Partial<AppConfig>) => {
-    setConfig((current) => ({ ...current, ...patch }));
+    setConfig((current) => {
+      const nextConfig = { ...current, ...patch };
+      setRuntimeAudioVolumes(readAudioVolumesFromConfig(nextConfig));
+      return nextConfig;
+    });
     setConfigStatus(null);
     setExitStatus(null);
   };
+
+  useEffect(() => {
+    if (!hasLoadedConfigRef.current || isExiting) {
+      return;
+    }
+
+    const serializedConfig = JSON.stringify(config);
+    if (serializedConfig === lastPersistedConfigRef.current) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      if (isAutoSavingRef.current) {
+        return;
+      }
+
+      isAutoSavingRef.current = true;
+      void persistConfig(config).finally(() => {
+        isAutoSavingRef.current = false;
+      });
+    }, 250);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [config, isExiting]);
 
   const handleExit = async () => {
     setIsExiting(true);
@@ -76,6 +130,7 @@ export default function SettingsPanel() {
     try {
       const savedConfig = await saveAppConfig(config);
       setConfig(savedConfig);
+      setRuntimeAudioVolumes(readAudioVolumesFromConfig(savedConfig));
 
       if (savedConfig.Remember_On_Exit) {
         setExitStatus(t("ui.exitMemorySaving"));
@@ -106,7 +161,12 @@ export default function SettingsPanel() {
     <main className={cn("container flex flex-col gap-6", isZh && "font-ui-cn")}>
       <Card className="w-full max-w-3xl">
         <CardHeader>
-          <CardTitle className="text-lg">{t("menu.settings")}</CardTitle>
+          <div className="flex flex-col gap-1">
+            <CardTitle className="text-lg">{t("menu.settings")}</CardTitle>
+            <span className="text-xs text-white/70">
+              {t("ui.autoSaveHint")}
+            </span>
+          </div>
           <CardAction className="flex items-center gap-3">
             <Button
               font="normal"
@@ -143,6 +203,55 @@ export default function SettingsPanel() {
           )}
         </section>
 
+        <section className="flex w-full max-w-xl flex-col gap-3">
+          <label className="flex items-center gap-3 text-sm">
+            <Checkbox
+              checked={config.Always_On_Top}
+              onCheckedChange={(checked) => {
+                const nextValue = checked === true;
+                updateConfig({ Always_On_Top: nextValue });
+                void invoke("set_always_on_top", {
+                  always_on_top: nextValue,
+                }).catch((error: unknown) => {
+                  const message =
+                    error instanceof Error
+                      ? error.message
+                      : "Failed to update always-on-top";
+                  setConfigStatus(message);
+                });
+              }}
+              disabled={isExiting}
+              font="normal"
+            />
+            <span>{t("ui.alwaysOnTop")}</span>
+          </label>
+        </section>
+
+        <section className="flex w-full max-w-xl flex-col gap-3">
+          <div className="flex items-center justify-between text-sm">
+            <span>{t("ui.idleAutoMixMinutes")}</span>
+            <span className="text-xs text-white/70">
+              {config.Idle_Auto_Mix_Minutes === 0
+                ? t("ui.off")
+                : t("ui.minuteValue", {
+                    count: config.Idle_Auto_Mix_Minutes,
+                  })}
+            </span>
+          </div>
+          <Slider
+            min={0}
+            max={120}
+            step={1}
+            value={[config.Idle_Auto_Mix_Minutes]}
+            onValueChange={([value]) =>
+              updateConfig({ Idle_Auto_Mix_Minutes: value ?? 0 })
+            }
+            disabled={isExiting}
+            aria-label={t("ui.idleAutoMixMinutes")}
+            className="max-w-md"
+          />
+        </section>
+
         <section className="flex flex-col gap-6 max-w-xs">
           <span className="text-sm">{t("ui.language")}</span>
           <Select value={selectValue} onValueChange={(value) => void i18n.changeLanguage(value)}>
@@ -154,6 +263,27 @@ export default function SettingsPanel() {
               <SelectItem value="zh-CN">中文</SelectItem>
             </SelectContent>
           </Select>
+        </section>
+
+        <section className="flex w-full max-w-xl flex-col gap-3">
+          <div className="flex items-center justify-between text-sm">
+            <span>{isZh ? "音效音量" : "SE Volume"}</span>
+            <span className="text-xs text-white/70">
+              {Math.round(config.Audio_Volume_SE * 100)}%
+            </span>
+          </div>
+          <Slider
+            min={0}
+            max={100}
+            step={1}
+            value={[Math.round(config.Audio_Volume_SE * 100)]}
+            onValueChange={([value]) =>
+              updateConfig({ Audio_Volume_SE: (value ?? 0) / 100 })
+            }
+            disabled={isExiting}
+            aria-label={isZh ? "音效音量" : "SE Volume"}
+            className="max-w-md"
+          />
         </section>
 
         {!isFriendMode && (

@@ -19,6 +19,7 @@
         "height": 600,
         "decorations": false,
         "shadow": false,
+        "acceptFirstMouse": true,
         "transparent": true,
         "visible": false
       }
