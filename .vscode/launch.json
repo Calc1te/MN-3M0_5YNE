@@ -8,7 +8,7 @@
       "cargo": {
         "args": ["build", "--manifest-path=./src-tauri/Cargo.toml", "--no-default-features"],
         "filter": {
-          "name": "B4-rt_3n-der",
+          "name": "MN-3M0_5YNE",
           "kind": "bin"
         }
       },
@@ -23,7 +23,7 @@
       "cargo": {
         "args": ["build", "--manifest-path=./src-tauri/Cargo.toml", "--release", "--no-default-features"],
         "filter": {
-          "name": "B4-rt_3n-der",
+          "name": "MN-3M0_5YNE",
           "kind": "bin"
         }
       },

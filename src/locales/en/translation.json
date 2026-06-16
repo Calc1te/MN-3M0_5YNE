@@ -1,6 +1,6 @@
 {
   "ui": {
-    "title": "B4-rt 3n-der",
+    "title": "MN-3M0 5YNE",
     "inputPlaceholder": "Enter something",
     "greet": "Greet",
     "language": "Language",
@@ -30,6 +30,7 @@
     "autoSaveHint": "Settings here are saved automatically",
     "exit": "Exit",
     "rememberOnExit": "Let P clean up and remember this session on exit",
+    "launchOnStartup": "Launch on startup",
     "alwaysOnTop": "Keep window always on top",
     "idleAutoMixMinutes": "Idle auto-mix delay",
     "minuteValue": "{{count}} min",

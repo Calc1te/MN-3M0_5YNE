@@ -272,7 +272,7 @@ fn bootstrap_dir() -> Result<PathBuf, String> {
     let base = dirs::config_dir()
         .or_else(dirs::home_dir)
         .ok_or_else(|| "Failed to resolve user config directory".to_string())?;
-    let dir = base.join("B4-rt_3n-der");
+    let dir = base.join("MN-3M0_5YNE");
     fs::create_dir_all(&dir).map_err(|e| {
         format!(
             "Failed to create bootstrap directory {}: {e}",
@@ -1203,36 +1203,40 @@ pub fn run() {
     });
 
     tauri::Builder::default()
-    .plugin(tauri_plugin_opener::init())
-    .plugin(tauri_plugin_dialog::init())
-    .setup(|app| {
-        if let Some(window) = app.get_webview_window("main") {
-            if let Ok(config) = read_config() {
-                let _ = window.set_always_on_top(config.always_on_top);
-            }
-            let _ = window.set_shadow(false);
-            
-            if let Ok(Some(monitor)) = window.current_monitor() {
-                let screen_size = monitor.size();
-                let monitor_pos = monitor.position(); 
-                
-                let window_size = window.outer_size().unwrap_or_default();
-                
-                let offset_x = screen_size.width.saturating_sub(window_size.width) as i32 - 10;
-                let offset_y = screen_size.height.saturating_sub(window_size.height) as i32 - 100;
+        .plugin(tauri_plugin_autostart::Builder::new().build())
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            if let Some(window) = app.get_webview_window("main") {
+                if let Ok(config) = read_config() {
+                    let _ = window.set_always_on_top(config.always_on_top);
+                }
+                let _ = window.set_shadow(false);
 
-                let global_x = monitor_pos.x + offset_x;
-                let global_y = monitor_pos.y + offset_y;
+                if let Ok(Some(monitor)) = window.current_monitor() {
+                    let screen_size = monitor.size();
+                    let monitor_pos = monitor.position();
 
-                window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
-                    x: global_x,
-                    y: global_y
-                })).unwrap();
+                    let window_size = window.outer_size().unwrap_or_default();
+
+                    let offset_x = screen_size.width.saturating_sub(window_size.width) as i32 - 10;
+                    let offset_y =
+                        screen_size.height.saturating_sub(window_size.height) as i32 - 100;
+
+                    let global_x = monitor_pos.x + offset_x;
+                    let global_y = monitor_pos.y + offset_y;
+
+                    window
+                        .set_position(tauri::Position::Physical(tauri::PhysicalPosition {
+                            x: global_x,
+                            y: global_y,
+                        }))
+                        .unwrap();
+                }
+                window.show().unwrap();
             }
-            window.show().unwrap();
-        }
-        Ok(())
-    })
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             base_list,
             get_base,

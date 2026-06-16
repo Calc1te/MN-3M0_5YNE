@@ -67,9 +67,6 @@ function AppRoutes({
           element={
             <PanelTransition>
               <main className="container" color="none">
-                <h1 className="w-fit" {...ghostModeRegionProps}>
-                  {t("ui.title")}
-                </h1>
                 <BartenderMain
                   showSetupCompletePrompt={showSetupCompletePrompt}
                   onSetupCompletePromptShown={onSetupCompletePromptShown}

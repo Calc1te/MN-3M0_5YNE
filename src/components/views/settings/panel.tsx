@@ -3,6 +3,8 @@ import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 
+import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
+
 import { createMemoryVector, summarizeExitMemory } from "@/api_caller";
 import DirectorySelector from "@/components/directory-selector";
 import {
@@ -46,6 +48,9 @@ export default function SettingsPanel() {
   const [config, setConfig] = useState<AppConfig>(() => buildDefaultAppConfig());
   const [configStatus, setConfigStatus] = useState<string | null>(null);
   const [exitStatus, setExitStatus] = useState<string | null>(null);
+  const [autostartStatus, setAutostartStatus] = useState<string | null>(null);
+  const [autostartEnabled, setAutostartEnabled] = useState(false);
+  const [isUpdatingAutostart, setIsUpdatingAutostart] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
   const hasLoadedConfigRef = useRef(false);
   const isAutoSavingRef = useRef(false);
@@ -61,6 +66,20 @@ export default function SettingsPanel() {
       })
       .catch((error: unknown) => {
         console.error("Failed to load app config:", error);
+      });
+  }, []);
+
+  useEffect(() => {
+    void isEnabled()
+      .then((enabled) => {
+        setAutostartEnabled(enabled);
+      })
+      .catch((error: unknown) => {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Failed to load launch-on-startup status";
+        setAutostartStatus(message);
       });
   }, []);
 
@@ -157,6 +176,30 @@ export default function SettingsPanel() {
     }
   };
 
+  const handleAutostartChange = async (checked: boolean) => {
+    const previousValue = autostartEnabled;
+    setAutostartEnabled(checked);
+    setAutostartStatus(null);
+    setIsUpdatingAutostart(true);
+
+    try {
+      if (checked) {
+        await enable();
+      } else {
+        await disable();
+      }
+    } catch (error) {
+      setAutostartEnabled(previousValue);
+      setAutostartStatus(
+        error instanceof Error
+          ? error.message
+          : "Failed to update launch-on-startup",
+      );
+    } finally {
+      setIsUpdatingAutostart(false);
+    }
+  };
+
   return (
     <main className={cn("container flex flex-col gap-6", isZh && "font-ui-cn")}>
       <Card className="w-full max-w-3xl">
@@ -200,6 +243,23 @@ export default function SettingsPanel() {
           </label>
           {exitStatus && (
             <div className="text-xs text-white/70">{exitStatus}</div>
+          )}
+        </section>
+
+        <section className="flex w-full max-w-xl flex-col gap-3">
+          <label className="flex items-center gap-3 text-sm">
+            <Checkbox
+              checked={autostartEnabled}
+              onCheckedChange={(checked) =>
+                void handleAutostartChange(checked === true)
+              }
+              disabled={isExiting || isUpdatingAutostart}
+              font="normal"
+            />
+            <span>{t("ui.launchOnStartup")}</span>
+          </label>
+          {autostartStatus && (
+            <div className="text-xs text-white/70">{autostartStatus}</div>
           )}
         </section>
 

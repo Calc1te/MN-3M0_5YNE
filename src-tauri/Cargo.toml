@@ -1,5 +1,5 @@
 [package]
-name = "B4-rt_3n-der"
+name = "MN-3M0_5YNE"
 version = "0.1.0"
 description = "A Tauri App"
 authors = ["Calciiite"]
@@ -41,3 +41,6 @@ lancedb = "0.27.2"
 arrow-array = "57.3.1"
 chrono = "0.4.44"
 futures = "0.3"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-autostart = "2"

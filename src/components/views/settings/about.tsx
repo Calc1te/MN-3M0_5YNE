@@ -21,7 +21,7 @@ export default function About() {
   const copy = isZh
     ? {
         eyebrow: "LOCAL DATA BAR",
-        title: "B4-rt 3n-der",
+        title: "MN-3M0 5YNE",
         intro: "一个本地数据酒保。没有真的调制饮料，大概也无法改变人生",
         paragraphs: [
           <span key="1">P 会读取你指定的 base 目录，把废弃文件、临时文本和零散记忆当作调酒材料。它可以列出原料、查看内容、暂存混合，也能在你确认后删除或恢复那些数据饮品。</span>,
@@ -46,7 +46,7 @@ export default function About() {
       }
     : {
         eyebrow: "LOCAL DATA BAR",
-        title: "B4-rt 3n-der",
+        title: "MN-3M0 5YNE",
         intro: "A local data bartender. Not actually mixing drinks, and probably won't change lives.",
         paragraphs: [
           <span key="1">P reads your specified base directory, treating discarded files, temporary text, and fragmented memories as mixing ingredients. It can list materials, inspect content, stage mixes, and either permanently delete or restore those data drinks after your confirmation.</span>,

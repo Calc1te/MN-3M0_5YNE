@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "B4-rt_3n-der",
+  "productName": "MN-3M0_5YNE",
   "version": "0.1.0",
-  "identifier": "com.calcite.b4-rt-3n-der",
+  "identifier": "com.calcite.mn-3mo-5yne",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
     "macOSPrivateApi": true,
     "windows": [
       {
-        "title": "B4-rt_3n-der",
+        "title": "MN-3M0_5YNE",
         "label": "main",
         "width": 800,
         "height": 600,

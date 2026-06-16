@@ -1,6 +1,6 @@
 {
   "ui": {
-    "title": "B4-rt 3n-der",
+    "title": "MN-3M0 5YNE",
     "inputPlaceholder": "写点啥",
     "greet": "打招呼",
     "language": "语言",
@@ -30,6 +30,7 @@
     "autoSaveHint": "这里的设置会自动保存",
     "exit": "退出",
     "rememberOnExit": "退出时让 P 打扫酒吧并记住这次会话",
+    "launchOnStartup": "开机时自动启动",
     "alwaysOnTop": "窗口始终置顶",
     "idleAutoMixMinutes": "挂机后自动调酒等待时间",
     "minuteValue": "{{count}} 分钟",
