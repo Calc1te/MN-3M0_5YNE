@@ -5,7 +5,12 @@ import { invoke } from "@tauri-apps/api/core";
 
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 
-import { createMemoryVector, summarizeExitMemory } from "@/api_caller";
+import {
+  checkChatModelConnection,
+  checkEmbeddingModelConnection,
+  createMemoryVector,
+  summarizeExitMemory,
+} from "@/api_caller";
 import DirectorySelector from "@/components/directory-selector";
 import {
   Card,
@@ -29,6 +34,7 @@ import {
   buildDefaultAppConfig,
   getAppConfig,
   isFriendMode,
+  resolveRuntimeLlmConfig,
   saveAppConfig,
   type AppConfig,
 } from "@/lib/app-config";
@@ -38,6 +44,8 @@ import {
 } from "@/lib/audio-settings";
 import { getBartenderHistory } from "@/lib/bartender-history";
 import { cn } from "@/lib/utils";
+
+type ServiceStatus = "unknown" | "checking" | "online" | "offline";
 
 export default function SettingsPanel() {
   const { t, i18n } = useTranslation();
@@ -52,6 +60,12 @@ export default function SettingsPanel() {
   const [autostartEnabled, setAutostartEnabled] = useState(false);
   const [isUpdatingAutostart, setIsUpdatingAutostart] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
+  const [isCheckingModels, setIsCheckingModels] = useState(false);
+  const [chatModelStatus, setChatModelStatus] =
+    useState<ServiceStatus>("unknown");
+  const [embeddingModelStatus, setEmbeddingModelStatus] =
+    useState<ServiceStatus>("unknown");
+  const [lanceStatus, setLanceStatus] = useState<ServiceStatus>("unknown");
   const hasLoadedConfigRef = useRef(false);
   const isAutoSavingRef = useRef(false);
   const lastPersistedConfigRef = useRef("");
@@ -68,6 +82,22 @@ export default function SettingsPanel() {
         console.error("Failed to load app config:", error);
       });
   }, []);
+
+  useEffect(() => {
+    if (!hasLoadedConfigRef.current) {
+      return;
+    }
+
+    setLanceStatus("checking");
+    void invoke<{ online: boolean }>("check_lance_connection")
+      .then((result) => {
+        setLanceStatus(result.online ? "online" : "offline");
+      })
+      .catch((error: unknown) => {
+        console.error("Failed to check lance connection:", error);
+        setLanceStatus("offline");
+      });
+  }, [config.Bar_Root_Parent]);
 
   useEffect(() => {
     void isEnabled()
@@ -143,15 +173,25 @@ export default function SettingsPanel() {
   }, [config, isExiting]);
 
   const handleExit = async () => {
+    console.info("[settings] exit:start", {
+      rememberOnExit: config.Remember_On_Exit,
+      baseDir: config.Base_Dir,
+      barRootParent: config.Bar_Root_Parent,
+    });
     setIsExiting(true);
     setExitStatus(null);
 
     try {
+      console.info("[settings] exit:save_config:start");
       const savedConfig = await saveAppConfig(config);
+      console.info("[settings] exit:save_config:done", {
+        rememberOnExit: savedConfig.Remember_On_Exit,
+      });
       setConfig(savedConfig);
       setRuntimeAudioVolumes(readAudioVolumesFromConfig(savedConfig));
 
       if (savedConfig.Remember_On_Exit) {
+        console.info("[settings] exit:memory_summary:start");
         setExitStatus(t("ui.exitMemorySaving"));
         const summary = await summarizeExitMemory({
           language,
@@ -159,16 +199,28 @@ export default function SettingsPanel() {
           barRootParent: savedConfig.Bar_Root_Parent,
           history: getBartenderHistory(),
         });
+        console.info("[settings] exit:memory_summary:done", {
+          summaryLength: summary.length,
+        });
+        console.info("[settings] exit:memory_embedding:start");
         const memory = await createMemoryVector(summary, summary);
+        console.info("[settings] exit:memory_embedding:done", {
+          vectorLength: memory.vector.length,
+        });
+        console.info("[settings] exit:add_memory:start");
         await invoke("add_memory", {
           text: summary,
           vector: Array.from(memory.vector),
           tags: ["exit", "session_summary"],
         });
+        console.info("[settings] exit:add_memory:done");
       }
 
+      console.info("[settings] exit:quit_app:invoke");
       await invoke("quit_app");
+      console.info("[settings] exit:quit_app:resolved");
     } catch (error) {
+      console.error("[settings] exit:error", error);
       setExitStatus(
         error instanceof Error ? error.message : "Failed to exit cleanly",
       );
@@ -198,6 +250,60 @@ export default function SettingsPanel() {
     } finally {
       setIsUpdatingAutostart(false);
     }
+  };
+
+  const getStatusLabel = (status: ServiceStatus) => {
+    switch (status) {
+      case "checking":
+        return t("ui.connectionChecking");
+      case "online":
+        return t("ui.connectionOnline");
+      case "offline":
+        return t("ui.connectionOffline");
+      default:
+        return t("ui.connectionUnknown");
+    }
+  };
+
+  const getStatusClassName = (status: ServiceStatus) => {
+    switch (status) {
+      case "online":
+        return "text-green-400";
+      case "offline":
+        return "text-red-400";
+      default:
+        return "text-white/70";
+    }
+  };
+
+  const handleCheckModelConnections = async () => {
+    const runtimeConfig = resolveRuntimeLlmConfig(config);
+    setIsCheckingModels(true);
+    setChatModelStatus("checking");
+    setEmbeddingModelStatus("checking");
+    setConfigStatus(null);
+
+    const [chatResult, embeddingResult] = await Promise.allSettled([
+      checkChatModelConnection(runtimeConfig),
+      checkEmbeddingModelConnection(runtimeConfig),
+    ]);
+
+    setChatModelStatus(chatResult.status === "fulfilled" ? "online" : "offline");
+    setEmbeddingModelStatus(
+      embeddingResult.status === "fulfilled" ? "online" : "offline",
+    );
+
+    const failure = [chatResult, embeddingResult].find(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
+    );
+    setConfigStatus(
+      failure
+        ? failure.reason instanceof Error
+          ? failure.reason.message
+          : t("ui.connectionCheckFailed")
+        : t("ui.connectionCheckSuccess"),
+    );
+    setIsCheckingModels(false);
   };
 
   return (
@@ -388,6 +494,26 @@ export default function SettingsPanel() {
               placeholder={t("ui.embeddingModelPlaceholder")}
               font="normal"
             />
+            <div className="flex flex-col gap-1 text-xs text-white/70">
+              <div className="flex items-center justify-between gap-3">
+                <span>{t("ui.chatModelConnection")}</span>
+                <span className={getStatusClassName(chatModelStatus)}>
+                  {getStatusLabel(chatModelStatus)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span>{t("ui.embeddingModelConnection")}</span>
+                <span className={getStatusClassName(embeddingModelStatus)}>
+                  {getStatusLabel(embeddingModelStatus)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span>{t("ui.lanceConnection")}</span>
+                <span className={getStatusClassName(lanceStatus)}>
+                  {getStatusLabel(lanceStatus)}
+                </span>
+              </div>
+            </div>
             <div className="flex items-center gap-3">
               <Button
                 onClick={() => void handleSaveConfig()}
@@ -395,6 +521,16 @@ export default function SettingsPanel() {
                 className="h-9 shrink-0 px-4"
               >
                 {t("ui.configSave")}
+              </Button>
+              <Button
+                onClick={() => void handleCheckModelConnections()}
+                font="normal"
+                className="h-9 shrink-0 px-4"
+                disabled={isCheckingModels || isExiting}
+              >
+                {isCheckingModels
+                  ? t("ui.connectionChecking")
+                  : t("ui.checkConnections")}
               </Button>
               {configStatus && (
                 <div className="text-xs text-white/70">

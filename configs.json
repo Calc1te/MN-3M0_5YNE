@@ -1,0 +1,17 @@
+{
+  "Name": "User",
+  "Last_Activated": 1781602380,
+  "Base_Dir": "/Users/calcite/P_test",
+  "Bar_Root_Parent": "/Users/calcite/MN-3MO_5YNE/src-tauri",
+  "API_Key": "",
+  "Chat_Base_URL": "",
+  "Chat_Model": "",
+  "Embedding_Base_URL": "",
+  "Embedding_Model": "",
+  "Setup_Completed": true,
+  "Remember_On_Exit": false,
+  "Always_On_Top": true,
+  "Idle_Auto_Mix_Minutes": 10,
+  "Audio_Volume_BGM": 0.5,
+  "Audio_Volume_SE": 0.3
+}

@@ -79,14 +79,20 @@ export async function getRuntimeLlmConfig(): Promise<RuntimeLlmConfig> {
   }
 
   const config = await getAppConfig();
+  return resolveRuntimeLlmConfig(config);
+}
+
+export function resolveRuntimeLlmConfig(
+  config?: Partial<AppConfig>,
+): RuntimeLlmConfig {
   const env = getEnvLlmConfig();
   return {
-    apiKey: config.API_Key.trim() || env.apiKey,
-    chatBaseUrl: config.Chat_Base_URL.trim() || env.chatBaseUrl,
-    chatModel: config.Chat_Model.trim() || env.chatModel,
+    apiKey: config?.API_Key?.trim() || env.apiKey,
+    chatBaseUrl: config?.Chat_Base_URL?.trim() || env.chatBaseUrl,
+    chatModel: config?.Chat_Model?.trim() || env.chatModel,
     embeddingBaseUrl:
-      config.Embedding_Base_URL.trim() || env.embeddingBaseUrl,
-    embeddingModel: config.Embedding_Model.trim() || env.embeddingModel,
+      config?.Embedding_Base_URL?.trim() || env.embeddingBaseUrl,
+    embeddingModel: config?.Embedding_Model?.trim() || env.embeddingModel,
   };
 }
 

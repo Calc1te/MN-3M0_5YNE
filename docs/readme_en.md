@@ -1,9 +1,12 @@
 ```
-  ___ _ _          _     ____           _         
- | _ ) | | ___ _ _| |_  |__ /_ _ ___ __| |___ _ _ 
- | _ \_  _|___| '_|  _|  |_ \ ' \___/ _` / -_) '_|
- |___/ |_|    |_|  \__| |___/_||_|  \__,_\___|_|  
-                                                  
+███╗   ███╗███╗   ██╗     ██████╗ ███╗   ███╗ ██████╗     ███████╗██╗   ██╗███╗   ██╗███████╗
+████╗ ████║████╗  ██║     ╚════██╗████╗ ████║██╔═████╗    ██╔════╝╚██╗ ██╔╝████╗  ██║██╔════╝
+██╔████╔██║██╔██╗ ██║█████╗█████╔╝██╔████╔██║██║██╔██║    ███████╗ ╚████╔╝ ██╔██╗ ██║█████╗  
+██║╚██╔╝██║██║╚██╗██║╚════╝╚═══██╗██║╚██╔╝██║████╔╝██║    ╚════██║  ╚██╔╝  ██║╚██╗██║██╔══╝  
+██║ ╚═╝ ██║██║ ╚████║     ██████╔╝██║ ╚═╝ ██║╚██████╔╝    ███████║   ██║   ██║ ╚████║███████╗
+╚═╝     ╚═╝╚═╝  ╚═══╝     ╚═════╝ ╚═╝     ╚═╝ ╚═════╝     ╚══════╝   ╚═╝   ╚═╝  ╚═══╝╚══════╝
+                                                                                             
+
 ```
 
 Time to mix drinks and change lives.
@@ -11,7 +14,7 @@ Time to mix drinks and change lives.
 ---
 
 
-B4-rt 3n-der, also known as data bar, is a cross-platform, transparent, borderless desktop application built on the **Tauri v2** framework. 
+MN-3MO SYNE, or Μνημοσύνη，or Mnemosyne, also known as data bar, is a cross-platform, transparent, borderless desktop application built on the **Tauri v2** framework. 
 
 * Backend: Rust (Tauri v2, Axum, LanceDB)
 * Frontend: React / Vite (Tailwind CSS)

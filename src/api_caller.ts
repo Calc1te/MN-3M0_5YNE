@@ -6,7 +6,10 @@ import type {
 import { invoke } from "@tauri-apps/api/core";
 import i18n, { getCurrentLanguage } from "./i18n";
 import { getRuntimeApiKey } from "@/lib/api-key";
-import { getRuntimeLlmConfig } from "@/lib/app-config";
+import {
+  getRuntimeLlmConfig,
+  type RuntimeLlmConfig,
+} from "@/lib/app-config";
 
 export type Role = "user" | "assistant" | "system";
 
@@ -58,28 +61,13 @@ function createOpenAiClient(apiKey: string, baseUrl: string): OpenAI {
   });
 }
 
-type ArkMultimodalEmbeddingInput =
-  | {
-      type: "text";
-      text: string;
-    }
-  | {
-      type: "image_url";
-      image_url: {
-        url: string;
-      };
-    }
-  | {
-      type: "video_url";
-      video_url: {
-        url: string;
-      };
-    };
-
 interface ArkMultimodalEmbeddingResponse {
+  embedding?: number[];
   data?: {
     embedding?: number[];
-  };
+  } | Array<{
+    embedding?: number[];
+  }>;
   error?: {
     message?: string;
   };
@@ -88,6 +76,45 @@ interface ArkMultimodalEmbeddingResponse {
 function buildEmbeddingUrl(baseUrl: string): string {
   const trimmed = baseUrl.replace(/\/+$/, "");
   return trimmed;
+}
+
+function getEmbeddingFromPayload(
+  payload: ArkMultimodalEmbeddingResponse,
+): number[] | undefined {
+  if (Array.isArray(payload.embedding)) {
+    return payload.embedding;
+  }
+  if (Array.isArray(payload.data)) {
+    return payload.data[0]?.embedding;
+  }
+  return payload.data?.embedding;
+}
+
+async function parseEmbeddingResponse(
+  response: Response,
+): Promise<ArkMultimodalEmbeddingResponse> {
+  const responseText = await response.text();
+  if (!responseText) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(responseText) as ArkMultimodalEmbeddingResponse;
+  } catch {
+    if (!response.ok) {
+      throw new Error(responseText);
+    }
+    throw new Error("Embedding service returned non-JSON response");
+  }
+}
+
+async function resolveLlmConfig(
+  configOverride?: RuntimeLlmConfig,
+): Promise<RuntimeLlmConfig> {
+  if (configOverride) {
+    return configOverride;
+  }
+  return getRuntimeLlmConfig();
 }
 
 function getSystemPrompt(): string {
@@ -257,7 +284,7 @@ export async function chatWithBartender(
   userInput: string,
   history: ChatTurn[] = [],
 ): Promise<BartenderReply> {
-  const config = await getRuntimeLlmConfig();
+  const config = await resolveLlmConfig();
   if (!config.chatBaseUrl) {
     throw new Error("Missing VITE_BARTENDER_URL");
   }
@@ -294,7 +321,7 @@ export async function chatWithBartenderStream(
   history: ChatTurn[] = [],
   onAssistantText?: (text: string) => void,
 ): Promise<BartenderReply> {
-  const config = await getRuntimeLlmConfig();
+  const config = await resolveLlmConfig();
   if (!config.chatBaseUrl) {
     throw new Error("Missing VITE_BARTENDER_URL");
   }
@@ -348,7 +375,7 @@ export async function createMemoryVector(
   memoryText: string,
   memoryContent: string,
 ): Promise<memoryEntry> {
-  const config = await getRuntimeLlmConfig();
+  const config = await resolveLlmConfig();
   const apiKey = config.apiKey || (await getRuntimeApiKey());
   if (!apiKey) {
     throw new Error(i18n.t("errors.missingApiKey"));
@@ -362,12 +389,6 @@ export async function createMemoryVector(
     throw new Error("Missing VITE_EMBD_URL");
   }
 
-  const input: ArkMultimodalEmbeddingInput[] = [
-    {
-      type: "text",
-      text: memoryText,
-    },
-  ];
   const response = await fetch(buildEmbeddingUrl(config.embeddingBaseUrl), {
     method: "POST",
     headers: {
@@ -376,18 +397,18 @@ export async function createMemoryVector(
     },
     body: JSON.stringify({
       model,
-      encoding_format: "float",
-      dimensions: "1024",
-      input,
+      input: memoryText,
     }),
   });
 
-  const payload = (await response.json()) as ArkMultimodalEmbeddingResponse;
+  const payload = await parseEmbeddingResponse(response);
   if (!response.ok) {
-    throw new Error(payload.error?.message ?? `Embedding request failed: ${response.status}`);
+    throw new Error(
+      payload.error?.message ?? `Embedding request failed: ${response.status}`,
+    );
   }
 
-  const embedding = payload.data?.embedding;
+  const embedding = getEmbeddingFromPayload(payload);
   if (!Array.isArray(embedding)) {
     throw new Error("Embedding response did not include data.embedding");
   }
@@ -404,7 +425,7 @@ export async function summarizeExitMemory(context: {
   barRootParent?: string;
   history?: ChatTurn[];
 }): Promise<string> {
-  const config = await getRuntimeLlmConfig();
+  const config = await resolveLlmConfig();
   if (!config.chatBaseUrl) {
     throw new Error("Missing VITE_BARTENDER_URL");
   }
@@ -470,6 +491,72 @@ function buildMemoryEmbeddingText(text: string, tags: string[]): string {
     return text;
   }
   return `tags: ${tags.join(", ")}\ntext: ${text}`;
+}
+
+export async function checkChatModelConnection(
+  configOverride?: RuntimeLlmConfig,
+): Promise<void> {
+  const config = await resolveLlmConfig(configOverride);
+  if (!config.chatBaseUrl) {
+    throw new Error("Missing VITE_BARTENDER_URL");
+  }
+
+  const apiKey = config.apiKey || (await getRuntimeApiKey());
+  if (!apiKey) {
+    throw new Error(i18n.t("errors.missingApiKey"));
+  }
+
+  if (!config.chatModel) {
+    throw new Error("Missing VITE_ARK_ENDPOINT_ID");
+  }
+
+  const openai = createOpenAiClient(apiKey, config.chatBaseUrl);
+  await openai.chat.completions.create({
+    model: config.chatModel,
+    temperature: 0,
+    max_tokens: 1,
+    messages: [{ role: "user", content: "ping" }],
+  });
+}
+
+export async function checkEmbeddingModelConnection(
+  configOverride?: RuntimeLlmConfig,
+): Promise<void> {
+  const config = await resolveLlmConfig(configOverride);
+  const apiKey = config.apiKey || (await getRuntimeApiKey());
+  if (!apiKey) {
+    throw new Error(i18n.t("errors.missingApiKey"));
+  }
+
+  if (!config.embeddingModel) {
+    throw new Error("Missing VITE_EMBD_MODEL");
+  }
+  if (!config.embeddingBaseUrl) {
+    throw new Error("Missing VITE_EMBD_URL");
+  }
+
+  const response = await fetch(buildEmbeddingUrl(config.embeddingBaseUrl), {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: config.embeddingModel,
+      input: "ping",
+    }),
+  });
+
+  const payload = await parseEmbeddingResponse(response);
+  if (!response.ok) {
+    throw new Error(
+      payload.error?.message ?? `Embedding request failed: ${response.status}`,
+    );
+  }
+
+  if (!Array.isArray(getEmbeddingFromPayload(payload))) {
+    throw new Error("Embedding response did not include data.embedding");
+  }
 }
 
 export interface McpTransport {

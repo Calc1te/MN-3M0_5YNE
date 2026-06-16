@@ -55,7 +55,6 @@ function AppRoutes({
   showSetupCompletePrompt: boolean;
   onSetupCompletePromptShown: () => void;
 }) {
-  const { t } = useTranslation();
   const location = useLocation();
 
   return (
