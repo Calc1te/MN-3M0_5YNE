@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState, type ReactNode } from "react";
-import { cursorPosition, getCurrentWindow } from "@tauri-apps/api/window";
+import { cursorPosition } from "@tauri-apps/api/window";
 import {
   BrowserRouter as Router,
   Routes,
@@ -123,7 +123,7 @@ function App() {
       });
 
       if (isWindowsGhostModePlatform()) {
-        enableClick();
+        reconcileGhostModeFromPoint(event.clientX, event.clientY);
         return;
       }
 
@@ -131,12 +131,18 @@ function App() {
     };
     const handleWindowDeactivation = () => {
       console.debug("[ghost-mode]", "window:blur");
+      if (isWindowsGhostModePlatform()) {
+        return;
+      }
       enableClick();
     };
     const handleVisibilityChange = () => {
       console.debug("[ghost-mode]", "document:visibilitychange", {
         hidden: document.hidden,
       });
+      if (isWindowsGhostModePlatform()) {
+        return;
+      }
       if (document.hidden) {
         enableClick();
       }
@@ -147,62 +153,89 @@ function App() {
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     let disposed = false;
-    let unlistenMoved: (() => void) | null = null;
+    let ghostPollTimer: number | null = null;
+    let pollInFlight = false;
+    let lastSample:
+      | {
+          insideWindow: boolean;
+          clientX: number;
+          clientY: number;
+        }
+      | null = null;
 
     if (isWindowsGhostModePlatform()) {
-      void getCurrentWindow()
-        .onMoved(async ({ payload }) => {
-          try {
-            const pointer = await cursorPosition();
-            if (disposed) {
-              return;
-            }
+      const pollGhostMode = async () => {
+        if (disposed || pollInFlight) {
+          return;
+        }
 
-            const scale = window.devicePixelRatio || 1;
-            const clientX = (pointer.x - payload.x) / scale;
-            const clientY = (pointer.y - payload.y) / scale;
+        pollInFlight = true;
+        try {
+          const pointer = await cursorPosition();
+          if (disposed) {
+            return;
+          }
 
-            console.debug("[ghost-mode]", "window:moved", {
-              windowX: payload.x,
-              windowY: payload.y,
+          const scale = window.devicePixelRatio || 1;
+          const clientX = (pointer.x - window.screenX) / scale;
+          const clientY = (pointer.y - window.screenY) / scale;
+          const insideWindow =
+            clientX >= 0 &&
+            clientY >= 0 &&
+            clientX <= window.innerWidth &&
+            clientY <= window.innerHeight;
+
+          const roundedSample = {
+            insideWindow,
+            clientX: Math.round(clientX),
+            clientY: Math.round(clientY),
+          };
+
+          const sampleChanged =
+            !lastSample ||
+            lastSample.insideWindow !== roundedSample.insideWindow ||
+            lastSample.clientX !== roundedSample.clientX ||
+            lastSample.clientY !== roundedSample.clientY;
+
+          if (sampleChanged) {
+            console.debug("[ghost-mode]", "windows:poll", {
               pointerX: pointer.x,
               pointerY: pointer.y,
-              clientX,
-              clientY,
+              screenX: window.screenX,
+              screenY: window.screenY,
+              clientX: roundedSample.clientX,
+              clientY: roundedSample.clientY,
+              insideWindow,
               innerWidth: window.innerWidth,
               innerHeight: window.innerHeight,
               scale,
             });
+            lastSample = roundedSample;
+          }
 
-            if (
-              clientX >= 0 &&
-              clientY >= 0 &&
-              clientX <= window.innerWidth &&
-              clientY <= window.innerHeight
-            ) {
-              reconcileGhostModeFromPoint(clientX, clientY);
-            } else {
-              disableClick();
-            }
-          } catch (error) {
-            console.debug("[ghost-mode]", "window:moved:error", error);
+          if (insideWindow) {
+            reconcileGhostModeFromPoint(clientX, clientY);
+          } else {
+            disableClick();
           }
-        })
-        .then((unlisten) => {
-          if (disposed) {
-            unlisten();
-            return;
-          }
-          unlistenMoved = unlisten;
-        })
-        .catch((error) => {
-          console.debug("[ghost-mode]", "window:moved:listen-error", error);
-        });
+        } catch (error) {
+          console.debug("[ghost-mode]", "windows:poll:error", error);
+        } finally {
+          pollInFlight = false;
+        }
+      };
+
+      void pollGhostMode();
+      ghostPollTimer = window.setInterval(() => {
+        void pollGhostMode();
+      }, 120);
     }
 
     return () => {
       disposed = true;
-      unlistenMoved?.();
+      if (ghostPollTimer !== null) {
+        window.clearInterval(ghostPollTimer);
+      }
       window.removeEventListener("mouseenter", handleWindowMouseEnter);
       window.removeEventListener("blur", handleWindowDeactivation);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
