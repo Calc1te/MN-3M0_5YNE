@@ -12,6 +12,7 @@ import {
   summarizeExitMemory,
 } from "@/api_caller";
 import DirectorySelector from "@/components/directory-selector";
+import PDialog from "@/components/P_dialog";
 import {
   Card,
   CardAction,
@@ -43,6 +44,11 @@ import {
   setRuntimeAudioVolumes,
 } from "@/lib/audio-settings";
 import { getBartenderHistory } from "@/lib/bartender-history";
+import {
+  DIALOG_TYPING_SPEED_VALUES,
+  getDialogTypingIntervalMs,
+  type DialogTypingSpeed,
+} from "@/lib/dialog-typing-speed";
 import { cn } from "@/lib/utils";
 
 type ServiceStatus = "unknown" | "checking" | "online" | "offline";
@@ -69,6 +75,21 @@ export default function SettingsPanel() {
   const hasLoadedConfigRef = useRef(false);
   const isAutoSavingRef = useRef(false);
   const lastPersistedConfigRef = useRef("");
+  const previewTimerRef = useRef<number | null>(null);
+  const [typingPreviewText, setTypingPreviewText] = useState("");
+  const [isTypingPreviewSpeaking, setIsTypingPreviewSpeaking] = useState(false);
+
+  const typingPreviewMessage = isZh
+    ? "我的限制分级本来该是全年龄…但是小孩子不能来酒吧，不是吗？所以这是程序内的再分级，我认为我自己是个十八禁程序里的十八禁。"
+    : "My age rating was supposed to be “G”... but kids aren't allowed in bars, right? So this is a re-rating within the app, and I consider myself an “18+” content within an “18+” app.";
+
+  useEffect(() => {
+    return () => {
+      if (previewTimerRef.current !== null) {
+        window.clearTimeout(previewTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     void getAppConfig()
@@ -82,6 +103,37 @@ export default function SettingsPanel() {
         console.error("Failed to load app config:", error);
       });
   }, []);
+
+  useEffect(() => {
+    if (!hasLoadedConfigRef.current) {
+      return;
+    }
+
+    if (previewTimerRef.current !== null) {
+      window.clearTimeout(previewTimerRef.current);
+      previewTimerRef.current = null;
+    }
+
+    setTypingPreviewText("");
+    setIsTypingPreviewSpeaking(false);
+
+    const startTimer = window.setTimeout(() => {
+      setTypingPreviewText(typingPreviewMessage);
+      setIsTypingPreviewSpeaking(true);
+    }, 30);
+
+    const finishTimer = window.setTimeout(() => {
+      setIsTypingPreviewSpeaking(false);
+      previewTimerRef.current = null;
+    }, typingPreviewMessage.length * getDialogTypingIntervalMs(config.Dialog_Typing_Speed) + 240);
+
+    previewTimerRef.current = finishTimer;
+
+    return () => {
+      window.clearTimeout(startTimer);
+      window.clearTimeout(finishTimer);
+    };
+  }, [config.Dialog_Typing_Speed, typingPreviewMessage]);
 
   useEffect(() => {
     if (!hasLoadedConfigRef.current) {
@@ -306,6 +358,13 @@ export default function SettingsPanel() {
     setIsCheckingModels(false);
   };
 
+  const handleTypingSpeedChange = (speed: DialogTypingSpeed, checked: boolean) => {
+    if (!checked || config.Dialog_Typing_Speed === speed) {
+      return;
+    }
+    updateConfig({ Dialog_Typing_Speed: speed });
+  };
+
   return (
     <main className={cn("container flex flex-col gap-6", isZh && "font-ui-cn")}>
       <Card className="w-full max-w-3xl">
@@ -415,6 +474,35 @@ export default function SettingsPanel() {
             disabled={isExiting}
             aria-label={t("ui.idleAutoMixMinutes")}
             className="max-w-md"
+          />
+        </section>
+
+        <section className="flex w-full max-w-xl flex-col gap-3">
+          <span className="text-sm">{t("ui.dialogTypingSpeed")}</span>
+          <div className="flex flex-wrap items-center gap-4">
+            {DIALOG_TYPING_SPEED_VALUES.map((speed) => (
+              <label key={speed} className="flex items-center gap-2 text-sm">
+                <Checkbox
+                  checked={config.Dialog_Typing_Speed === speed}
+                  onCheckedChange={(checked) =>
+                    handleTypingSpeedChange(speed, checked === true)
+                  }
+                  disabled={isExiting}
+                  font="normal"
+                />
+                <span>{t(`ui.dialogTypingSpeed${speed[0].toUpperCase()}${speed.slice(1)}`)}</span>
+              </label>
+            ))}
+          </div>
+          <PDialog
+            value={typingPreviewText}
+            isSpeaking={isTypingPreviewSpeaking}
+            typingSpeed={config.Dialog_Typing_Speed}
+            readOnly
+            rows={4}
+            font="normal"
+            label={t("ui.dialogTypingPreview")}
+            className="bg-foreground text-background placeholder:text-background/60"
           />
         </section>
 

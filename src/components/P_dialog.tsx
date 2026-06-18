@@ -7,6 +7,7 @@ import {
   hydrateRuntimeAudioVolumes,
   subscribeAudioVolumes,
 } from "@/lib/audio-settings";
+import { getDialogTypingIntervalMs } from "@/lib/dialog-typing-speed";
 import { cn } from "@/lib/utils";
 
 export type PDialogProps = Omit<BitTextareaProps, "value"> & {
@@ -15,6 +16,7 @@ export type PDialogProps = Omit<BitTextareaProps, "value"> & {
   label?: string;
   isSpeaking?: boolean;
   containerProps?: HTMLAttributes<HTMLDivElement>;
+  typingSpeed?: string;
 };
 
 export default function PDialog({
@@ -23,6 +25,7 @@ export default function PDialog({
   isSpeaking = false,
   containerClassName,
   containerProps,
+  typingSpeed,
   readOnly = true,
   className,
   ...props
@@ -32,6 +35,7 @@ export default function PDialog({
   const typingTimerRef = useRef<number | null>(null);
   const pauseTimerRef = useRef<number | null>(null);
   const soundIndexRef = useRef(0);
+  const typingIntervalMs = getDialogTypingIntervalMs(typingSpeed);
 
   useEffect(() => {
     if (typeof Audio === "undefined") {
@@ -123,7 +127,7 @@ export default function PDialog({
       const nextChar = value.charAt(renderedValue.length);
       setRenderedValue(value.slice(0, renderedValue.length + 1));
       playTypingSound(nextChar);
-    }, 18);
+    }, typingIntervalMs);
 
     return () => {
       if (typingTimerRef.current !== null) {
@@ -131,7 +135,7 @@ export default function PDialog({
         typingTimerRef.current = null;
       }
     };
-  }, [isSpeaking, renderedValue, value]);
+  }, [isSpeaking, renderedValue, typingIntervalMs, value]);
 
   if (!renderedValue.trim()) {
     return null;

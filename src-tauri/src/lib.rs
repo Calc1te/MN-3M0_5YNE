@@ -214,6 +214,11 @@ struct BarConfig {
         default = "default_idle_auto_mix_minutes"
     )]
     idle_auto_mix_minutes: u64,
+    #[serde(
+        rename = "Dialog_Typing_Speed",
+        default = "default_dialog_typing_speed"
+    )]
+    dialog_typing_speed: String,
     #[serde(rename = "Audio_Volume_BGM", default = "default_bgm_volume")]
     audio_volume_bgm: f64,
     #[serde(rename = "Audio_Volume_SE", default = "default_se_volume")]
@@ -230,6 +235,10 @@ fn default_bgm_volume() -> f64 {
 
 fn default_idle_auto_mix_minutes() -> u64 {
     10
+}
+
+fn default_dialog_typing_speed() -> String {
+    "fast".to_string()
 }
 
 fn default_se_volume() -> f64 {
@@ -252,6 +261,7 @@ impl Default for BarConfig {
             remember_on_exit: false,
             always_on_top: false,
             idle_auto_mix_minutes: default_idle_auto_mix_minutes(),
+            dialog_typing_speed: default_dialog_typing_speed(),
             audio_volume_bgm: default_bgm_volume(),
             audio_volume_se: default_se_volume(),
         }
@@ -958,6 +968,12 @@ fn save_app_config_internal(mut config: BarConfig) -> Result<BarConfig, String> 
     if !config.base_dir.trim().is_empty() {
         let canonical = validate_base_dir(&config.base_dir)?;
         config.base_dir = canonical.to_string_lossy().into_owned();
+    }
+    if !matches!(
+        config.dialog_typing_speed.as_str(),
+        "slow" | "medium" | "fast"
+    ) {
+        config.dialog_typing_speed = default_dialog_typing_speed();
     }
 
     write_bootstrap_config(&BootstrapConfig {

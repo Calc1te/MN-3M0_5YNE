@@ -1,4 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
+import {
+  DEFAULT_DIALOG_TYPING_SPEED,
+  type DialogTypingSpeed,
+} from "@/lib/dialog-typing-speed";
 
 export interface AppConfig {
   Name: string;
@@ -14,6 +18,7 @@ export interface AppConfig {
   Remember_On_Exit: boolean;
   Always_On_Top: boolean;
   Idle_Auto_Mix_Minutes: number;
+  Dialog_Typing_Speed: DialogTypingSpeed;
   Audio_Volume_BGM: number;
   Audio_Volume_SE: number;
 }
@@ -50,6 +55,7 @@ export function buildDefaultAppConfig(): AppConfig {
     Remember_On_Exit: false,
     Always_On_Top: false,
     Idle_Auto_Mix_Minutes: 10,
+    Dialog_Typing_Speed: DEFAULT_DIALOG_TYPING_SPEED,
     Audio_Volume_BGM: 0.5,
     Audio_Volume_SE: 0.3,
   };
