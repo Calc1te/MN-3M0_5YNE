@@ -4,6 +4,12 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/8bit/button";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/8bit/input";
 import {
   Select,
@@ -123,13 +129,18 @@ export default function InitialSetup({
 
   return (
     <main className={cn("container flex min-h-screen flex-col justify-center gap-6 px-8", isZh && "font-ui-cn")}>
-      <section className="flex w-full max-w-xl flex-col gap-5">
-        <div className="flex items-center justify-between">
-          <h1 className="text-lg font-semibold">{t("setup.title")}</h1>
-          <span className="text-xs text-foreground/70">
-            {stepIndex + 1}/{steps.length}
-          </span>
-        </div>
+      <Card className="w-full max-w-xl text-white">
+        <CardHeader>
+          <div className="flex items-center justify-between gap-4">
+            <CardTitle className="text-lg text-white">
+              {t("setup.title")}
+            </CardTitle>
+            <span className="text-xs text-white/70">
+              {stepIndex + 1}/{steps.length}
+            </span>
+          </div>
+        </CardHeader>
+        <CardContent className="flex w-full flex-col gap-5">
 
         {step === "language" && (
           <div className="flex flex-col gap-3">
@@ -245,7 +256,8 @@ export default function InitialSetup({
               : t("setup.next")}
           </Button>
         </div>
-      </section>
+        </CardContent>
+      </Card>
     </main>
   );
 }
