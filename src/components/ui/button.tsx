@@ -2,6 +2,7 @@ import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { Slot } from "radix-ui"
 
+import { useButtonClickSound } from "@/lib/use-button-click-sound"
 import { cn } from "@/lib/utils"
 
 const buttonVariants = cva(
@@ -50,6 +51,8 @@ function Button({
     asChild?: boolean
   }) {
   const Comp = asChild ? Slot.Root : "button"
+  const playClickSound = useButtonClickSound()
+  const { onClick, ...restProps } = props
 
   return (
     <Comp
@@ -57,7 +60,14 @@ function Button({
       data-variant={variant}
       data-size={size}
       className={cn(buttonVariants({ variant, size, className }))}
-      {...props}
+      onClick={(event) => {
+        onClick?.(event)
+
+        if (!event.defaultPrevented) {
+          playClickSound()
+        }
+      }}
+      {...restProps}
     />
   )
 }

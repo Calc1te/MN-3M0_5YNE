@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { createMemoryVector } from "@/api_caller";
+import { useButtonClickSound } from "@/lib/use-button-click-sound";
 
 interface AddMemoryResponse {
   id: string;
@@ -13,6 +14,7 @@ export default function MemoryAdder() {
   const [isSaving, setIsSaving] = useState(false);
   const [result, setResult] = useState<AddMemoryResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const playButtonClickSound = useButtonClickSound();
 
   const handleAddMemory = async () => {
     const trimmed = text.trim();
@@ -71,7 +73,10 @@ export default function MemoryAdder() {
           className="flex-1 px-3 py-2 border border-border rounded bg-background text-foreground placeholder:text-muted-foreground"
         />
         <button
-          onClick={() => void handleAddMemory()}
+          onClick={() => {
+            playButtonClickSound();
+            void handleAddMemory();
+          }}
           disabled={isSaving || !text.trim()}
           className="px-4 py-2 bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50"
         >
