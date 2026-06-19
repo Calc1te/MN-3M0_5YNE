@@ -11,6 +11,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/8bit/input";
+import { ghostModeRegionProps } from "@/lib/ghost-mode";
 import {
   Select,
   SelectContent,
@@ -157,7 +158,7 @@ export default function InitialSetup({
               <SelectTrigger font="normal">
                 <SelectValue placeholder={t("ui.language")} font="normal" />
               </SelectTrigger>
-              <SelectContent font="normal">
+              <SelectContent {...ghostModeRegionProps} font="normal">
                 <SelectItem value="en">English</SelectItem>
                 <SelectItem value="zh-CN">中文</SelectItem>
                 <SelectItem value="jp">日本語</SelectItem>
