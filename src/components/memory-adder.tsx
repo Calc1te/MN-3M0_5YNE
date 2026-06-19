@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useTranslation } from "react-i18next";
 import { createMemoryVector } from "@/api_caller";
 import { useButtonClickSound } from "@/lib/use-button-click-sound";
 
@@ -10,6 +11,7 @@ interface AddMemoryResponse {
 }
 
 export default function MemoryAdder() {
+  const { t } = useTranslation();
   const [text, setText] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [result, setResult] = useState<AddMemoryResponse | null>(null);
@@ -19,7 +21,7 @@ export default function MemoryAdder() {
   const handleAddMemory = async () => {
     const trimmed = text.trim();
     if (!trimmed) {
-      setError("Please enter a memory");
+      setError(t("ui.memoryAdderRequired"));
       return;
     }
 
@@ -44,7 +46,7 @@ export default function MemoryAdder() {
 
   return (
     <div className="p-4 border border-border rounded-lg bg-card">
-      <h3 className="font-semibold mb-4">Memory</h3>
+      <h3 className="font-semibold mb-4">{t("ui.memoryAdderTitle")}</h3>
 
       {error && (
         <div className="mb-4 p-2 bg-destructive/20 text-destructive rounded text-sm">
@@ -54,7 +56,7 @@ export default function MemoryAdder() {
 
       {result && (
         <div className="mb-4 p-2 bg-primary/20 text-primary-foreground rounded text-sm">
-          Saved memory: {result.id}
+          {t("ui.memoryAdderSaved", { id: result.id })}
         </div>
       )}
 
@@ -68,7 +70,7 @@ export default function MemoryAdder() {
               void handleAddMemory();
             }
           }}
-          placeholder="Add a memory..."
+          placeholder={t("ui.memoryAdderPlaceholder")}
           disabled={isSaving}
           className="flex-1 px-3 py-2 border border-border rounded bg-background text-foreground placeholder:text-muted-foreground"
         />
@@ -80,7 +82,7 @@ export default function MemoryAdder() {
           disabled={isSaving || !text.trim()}
           className="px-4 py-2 bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50"
         >
-          {isSaving ? "Saving..." : "Add"}
+          {isSaving ? t("ui.memoryAdderSaving") : t("ui.memoryAdderAdd")}
         </button>
       </div>
     </div>

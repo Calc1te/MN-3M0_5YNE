@@ -25,6 +25,7 @@ import {
   simulateFirstInstall,
   type AppConfig,
 } from "@/lib/app-config";
+import { getUIFontClass, resolveAppLanguage } from "@/lib/language";
 
 function PanelTransition({ children }: { children: ReactNode }) {
   return (
@@ -103,7 +104,8 @@ function AppRoutes({
 function App() {
   const { i18n } = useTranslation();
   const language = i18n.resolvedLanguage ?? i18n.language;
-  const isZh = Boolean(language && language.startsWith("zh"));
+  const resolvedLanguage = resolveAppLanguage(language);
+  const uiFontClass = getUIFontClass(language);
   const [setupState, setSetupState] = useState<{
     loading: boolean;
     completed: boolean;
@@ -136,15 +138,14 @@ function App() {
   }, []);
 
   useEffect(() => {
-    document.body.classList.toggle("font-ui-cn", isZh);
-    document.body.classList.toggle("font-ui-en", !isZh);
-    document.documentElement.lang = language || "en";
+    document.body.classList.remove("font-ui-en", "font-ui-cn", "font-ui-jp");
+    document.body.classList.add(uiFontClass);
+    document.documentElement.lang = resolvedLanguage === "jp" ? "ja" : resolvedLanguage;
 
     return () => {
-      document.body.classList.remove("font-ui-cn");
-      document.body.classList.remove("font-ui-en");
+      document.body.classList.remove("font-ui-en", "font-ui-cn", "font-ui-jp");
     };
-  }, [isZh, language]);
+  }, [resolvedLanguage, uiFontClass]);
 
   useEffect(() => {
     void getInitialSetupStatus()
