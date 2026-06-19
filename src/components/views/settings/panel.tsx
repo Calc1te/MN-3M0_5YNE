@@ -44,6 +44,7 @@ import {
   setRuntimeAudioVolumes,
 } from "@/lib/audio-settings";
 import { getBartenderHistory } from "@/lib/bartender-history";
+import { ghostModeRegionProps } from "@/lib/ghost-mode";
 import {
   DIALOG_TYPING_SPEED_VALUES,
   getDialogTypingIntervalMs,
@@ -513,7 +514,7 @@ export default function SettingsPanel() {
             <SelectTrigger font="normal">
               <SelectValue placeholder={t("ui.language")} font="normal" />
             </SelectTrigger>
-            <SelectContent font="normal">
+            <SelectContent {...ghostModeRegionProps} font="normal">
               <SelectItem value="en">English</SelectItem>
               <SelectItem value="zh-CN">中文</SelectItem>
               <SelectItem value="jp">日本語</SelectItem>
