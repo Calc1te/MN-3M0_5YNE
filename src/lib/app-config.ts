@@ -38,7 +38,7 @@ export interface RuntimeLlmConfig {
 
 export const isFriendMode = import.meta.env.VITE_FRIEND_MODE === "true";
 export const simulateFirstInstall =
-  import.meta.env.VITE_SIMULATE_FIRST_INSTALL === "true";
+  import.meta.env.DEV && import.meta.env.VITE_SIMULATE_FIRST_INSTALL === "true";
 
 export function buildDefaultAppConfig(): AppConfig {
   return {
