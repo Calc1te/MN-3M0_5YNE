@@ -1,0 +1,3 @@
+[env]
+PROTOC = { value = "protoc/bin/protoc.exe", relative = true }
+PROTOC_INCLUDE = { value = "protoc/include", relative = true }

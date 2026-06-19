@@ -95,6 +95,10 @@ function commandLooksLikeRustBuild() {
   return command === "cargo" || command === "tauri";
 }
 
+function commandIsCargo() {
+  return commandArgs[0]?.toLowerCase() === "cargo";
+}
+
 function ensureWindowsRustToolchain() {
   if (!isWindows || !commandLooksLikeRustBuild()) {
     return;
@@ -125,7 +129,9 @@ function ensureWindowsRustToolchain() {
 
   if (preferredToolchain) {
     env[toolchainKey] = preferredToolchain.replace(/\s+\(.*\)$/, "");
-    env[targetKey] = "x86_64-pc-windows-msvc";
+    if (commandIsCargo()) {
+      env[targetKey] = "x86_64-pc-windows-msvc";
+    }
     return;
   }
 

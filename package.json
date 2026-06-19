@@ -11,7 +11,7 @@
     "build": "node scripts/with-env.mjs VITE_SIMULATE_FIRST_INSTALL=true -- tsc && node scripts/with-env.mjs VITE_SIMULATE_FIRST_INSTALL=true -- vite build",
     "build:friend": "node scripts/with-env.mjs VITE_FRIEND_MODE=true VITE_SIMULATE_FIRST_INSTALL=true -- tsc && node scripts/with-env.mjs VITE_FRIEND_MODE=true VITE_SIMULATE_FIRST_INSTALL=true -- vite build",
     "preview": "vite preview",
-    "tauri": "node scripts/with-env.mjs PATH+=/opt/homebrew/opt/rustup/bin -- tauri",
+    "tauri": "node scripts/with-env.mjs PATH+=/opt/homebrew/opt/rustup/bin PATH+=E:/NSIS -- tauri",
     "tauri:dev": "node scripts/with-env.mjs VITE_SIMULATE_FIRST_INSTALL=false -- npm run tauri -- dev",
     "tauri:dev:first-install": "node scripts/with-env.mjs VITE_SIMULATE_FIRST_INSTALL=true -- npm run tauri -- dev",
     "tauri:dev:friend": "node scripts/with-env.mjs VITE_FRIEND_MODE=true VITE_SIMULATE_FIRST_INSTALL=false -- npm run tauri -- dev",
