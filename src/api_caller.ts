@@ -436,7 +436,8 @@ export async function summarizeExitMemory(context: {
     throw new Error(i18n.t("errors.missingApiKey"));
   }
 
-  const isZh = context.language.startsWith("zh");
+  const language = getCurrentLanguage();
+  const t = i18n.getFixedT(language);
   const history = (context.history ?? []);
   const openai = createOpenAiClient(config.apiKey, config.chatBaseUrl);
   const completion = await openai.chat.completions.create({
@@ -445,9 +446,7 @@ export async function summarizeExitMemory(context: {
     messages: [
       {
         role: "system",
-        content: isZh
-          ? "你是酒保 P。用户即将退出应用。生成一条可以写入长期记忆的简短总结，只记录稳定偏好、配置位置、使用意图或值得下次复用的上下文。不要包含 API key、密钥、完整 base URL、令牌或敏感凭据。只输出记忆正文。"
-          : "You are bartender P. The user is exiting the app. Generate one short long-term memory note, only covering stable preferences, configured locations, user intent, or context worth reusing next time. Do not include API keys, secrets, full base URLs, tokens, or sensitive credentials. Output only the memory text.",
+        content: t("prompts.exitMemorySystem"),
       },
       {
         role: "user",
@@ -613,27 +612,19 @@ export async function runMcpToolCallsDetailed(
 }
 
 export function buildToolResultPrompt(toolResults: BartenderToolResult[]): string {
+  const language = getCurrentLanguage();
+  const t = i18n.getFixedT(language);
   const hasBaseList = toolResults.some(({ call }) => call.tool === "base_list");
-  const baseListGuidance =
-    getCurrentLanguage() === "zh-CN"
-      ? [
-          "base_list 展示规则：",
-          "你绝对不该把返回的文件逐项完整列出来。",
-          "只挑 2-5 个最有趣、最可疑、最适合调酒的文件，加以短评。",
-          "如果需要更多细节，应调用 get_base，而不是把目录清单倒给用户。",
-          "保持酒保 P 的毒舌、挑剔和审美，不要像文件管理器。",
-        ].join("\n")
-      : [
-          "base_list presentation rule:",
-          "Do not enumerate every returned file.",
-          "Pick only 2-5 interesting, suspicious, or drink-worthy files and comment on them briefly.",
-          "If more detail is needed, call get_base instead of dumping the directory list.",
-          "Stay sharp, selective, and in-character as bartender P. Do not sound like a file manager.",
-        ].join("\n");
+  const baseListGuidance = (
+    t("prompts.baseListGuidance", {
+      returnObjects: true,
+    }) as string[]
+  ).join("\n");
+  const baseListPresentationNote = t("prompts.baseListPresentationNote");
 
   return [
-    "The requested tools have finished. Use these results to answer the user.",
-    "Return the same strict JSON shape. Do not call the same tool again unless another tool call is truly necessary.",
+    t("prompts.toolResultsFinished"),
+    t("prompts.toolResultsReuseJson"),
     ...(hasBaseList ? [baseListGuidance] : []),
     JSON.stringify(
       toolResults.map(({ call, result, error }) => ({
@@ -641,8 +632,7 @@ export function buildToolResultPrompt(toolResults: BartenderToolResult[]): strin
         args: call.args,
         ...(call.tool === "base_list"
           ? {
-              presentation_note:
-                "Do not list all files. Select a few interesting candidates and comment on them in-character.",
+              presentation_note: baseListPresentationNote,
             }
           : {}),
         result,

@@ -22,6 +22,11 @@ import {
   setBartenderHistory,
 } from "@/lib/bartender-history";
 import { ghostModeRegionProps } from "@/lib/ghost-mode";
+import {
+  getChatFontClass,
+  getUIFontClass,
+  usesPixelUiFont,
+} from "@/lib/language";
 import { cn } from "@/lib/utils";
 import {
   changeBartenderState,
@@ -40,8 +45,9 @@ export default function BartenderMain({
 }: BartenderMainProps) {
   const { t, i18n } = useTranslation();
   const language = i18n.resolvedLanguage ?? i18n.language;
-  const isZh = Boolean(language && language.startsWith("zh"));
-  const chatFontClass = isZh ? "font-chat-cn" : "font-chat-en";
+  const uiFontClass = getUIFontClass(language);
+  const chatFontClass = getChatFontClass(language);
+  const usesPixelFont = usesPixelUiFont(language);
   const [input, setInput] = useState("");
   const [history, setHistory] = useState<ChatTurn[]>(() =>
     getBartenderHistory(),
@@ -351,7 +357,7 @@ export default function BartenderMain({
     <section
       className={cn(
         "fixed right-4 bottom-4 z-20 flex w-[min(24rem,calc(100vw-2rem))] max-h-[calc(100vh-2rem)] flex-col items-end justify-end gap-3 text-background",
-        isZh && "font-ui-cn",
+        uiFontClass,
       )}
     >
       <PDialog
@@ -400,14 +406,14 @@ export default function BartenderMain({
         placeholder={t("ui.inputPlaceholder") || "Enter message..."}
         disabled={isLoading}
         buttonLabel={isLoading ? t("utils.sending") : t("utils.send")}
-        buttonClassName={cn("w-20 h-8 text-white", !isZh && "text-[9px]")} // why english font so big bruh
+        buttonClassName={cn("w-20 h-8 text-white", !usesPixelFont && "text-[9px]")}
         className="w-full justify-end"
         inputClassName={cn(
           "bg-foreground text-background placeholder:text-background/60",
           chatFontClass,
         )}
         inputProps={{ font: "normal" }}
-        buttonProps={isZh ? { font: "normal" } : undefined}
+        buttonProps={usesPixelFont ? { font: "normal" } : undefined}
       />
     </section>
   );

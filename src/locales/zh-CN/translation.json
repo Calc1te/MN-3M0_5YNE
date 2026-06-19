@@ -48,8 +48,10 @@
     "dialogTypingSpeedMedium": "中",
     "dialogTypingSpeedFast": "快",
     "dialogTypingPreview": "速度预览",
+    "dialogTypingPreviewMessage": "我的限制分级本来该是全年龄……但是小孩子不能来酒吧，不是吗？所以这是程序内的再分级，我认为我自己是个十八禁程序里的十八禁。",
     "minuteValue": "{{count}} 分钟",
     "off": "关闭",
+    "seVolume": "音效音量",
     "exitMemorySaving": "P 正在打扫酒吧……",
     "viteLogoAlt": "Vite 图标",
     "tauriLogoAlt": "Tauri 图标",
@@ -59,7 +61,13 @@
     "debugStatePlaceholder": "选择状态",
     "debugIdleCountdown": "自动调酒触发倒计时",
     "debugIdleCountdownDisabled": "已关闭",
-    "debugIdleCountdownRunning": "触发中"
+    "debugIdleCountdownRunning": "触发中",
+    "memoryAdderTitle": "记忆",
+    "memoryAdderRequired": "请输入一条记忆",
+    "memoryAdderPlaceholder": "添加一条记忆...",
+    "memoryAdderAdd": "添加",
+    "memoryAdderSaving": "保存中...",
+    "memoryAdderSaved": "已保存记忆：{{id}}"
   },
   "setup": {
     "title": "初期化设置",
@@ -72,7 +80,7 @@
     "next": "下一步",
     "finish": "完成"
   },
-  "utils":{
+  "utils": {
     "send": "送信",
     "sending": "理解中"
   },
@@ -92,6 +100,36 @@
       "first": "这是你第一次启动",
       "stale": "{{user}}上一次启动你已经是{{days}}天前"
     },
-    "setup_complete": "行。吧台接好了，货架归位了，钥匙也塞进来了。现在把你的文件堆丢过来，我会把它们调成像样一点的东西。"
+    "setup_complete": "行。吧台接好了，货架归位了，钥匙也塞进来了。现在把你的文件堆丢过来，我会把它们调成像样一点的东西。",
+    "exitMemorySystem": "你是酒保 P。用户即将退出应用。生成一条可以写入长期记忆的简短总结，只记录稳定偏好、配置位置、使用意图或值得下次复用的上下文。不要包含 API key、密钥、完整 base URL、令牌或敏感凭据。只输出记忆正文。",
+    "toolResultsFinished": "请求的工具已经执行完成。请使用这些结果来回复用户。",
+    "toolResultsReuseJson": "继续返回同样严格的 JSON 结构。除非确实还有必要，否则不要再次调用同一个工具。",
+    "baseListPresentationNote": "不要把所有文件都列出来。挑几个有意思的候选，用 P 的口吻简短评论。",
+    "baseListGuidance": [
+      "base_list 展示规则：",
+      "你绝对不该把返回的文件逐项完整列出来。",
+      "只挑 2-5 个最有趣、最可疑、最适合调酒的文件，加以短评。",
+      "如果需要更多细节，应调用 get_base，而不是把目录清单倒给用户。",
+      "保持酒保 P 的毒舌、挑剔和审美，不要像文件管理器。"
+    ]
+  },
+  "about": {
+    "eyebrow": "LOCAL DATA BAR",
+    "title": "MN-3M0 5YNE",
+    "intro": "一个本地数据酒保。没有真的调制饮料，大概也无法改变人生",
+    "avatarAlt": "头像",
+    "paragraphs": [
+      "P 会读取你指定的 base 目录，把废弃文件、临时文本和零散记忆当作调酒材料。它可以列出原料、查看内容、暂存混合，也能在你确认后删除或恢复那些数据饮品。",
+      "当前版本尚在开发中，包括吧台上的所有东西和主界面 UI 都是未完成版。",
+      "Made by Calciiite,",
+      "没有许可协议没有知识库没有产权没有十八禁没有人类受到伤害没有预警没有吃到章鱼烧",
+      "献给Nymiad"
+    ],
+    "inspiredBy": {
+      "prefix": "灵感来自",
+      "linkLabel": "data bar \\\\ rev-2604",
+      "suffix": "by Nymiad。本重制版致力于在 LLM 浪潮下赋予 P 真正的动态交互灵魂。"
+    },
+    "imageSlots": []
   }
 }

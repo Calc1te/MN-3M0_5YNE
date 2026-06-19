@@ -10,6 +10,7 @@ import {
   SelectValue,
 } from "@/components/ui/8bit/select";
 import { ghostModeRegionProps } from "@/lib/ghost-mode";
+import { getUIFontClass } from "@/lib/language";
 import { cn } from "@/lib/utils";
 import {
   BARTENDER_STATES,
@@ -28,7 +29,7 @@ import {
 export default function DebugMenu() {
   const { t, i18n } = useTranslation();
   const language = i18n.resolvedLanguage ?? i18n.language;
-  const isZh = Boolean(language && language.startsWith("zh"));
+  const uiFontClass = getUIFontClass(language);
   const [state, setState] = useState<BartenderState>(() => getBartenderState());
   const [idleTrigger, setIdleTrigger] = useState<IdleTriggerState>(() =>
     getIdleTriggerState(),
@@ -55,7 +56,7 @@ export default function DebugMenu() {
       {...ghostModeRegionProps}
       className={cn(
         "w-full max-w-3xl mx-auto mt-6 border border-border rounded-lg bg-card p-4",
-        isZh && "font-ui-cn",
+        uiFontClass,
       )}
     >
       <summary className="cursor-pointer select-none font-semibold">
