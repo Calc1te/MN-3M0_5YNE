@@ -35,7 +35,14 @@ export default function PDialog({
   const typingTimerRef = useRef<number | null>(null);
   const pauseTimerRef = useRef<number | null>(null);
   const soundIndexRef = useRef(0);
+  const isMacPlatform =
+    typeof navigator !== "undefined" &&
+    /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
   const typingIntervalMs = getDialogTypingIntervalMs(typingSpeed);
+  const typingChunkSize = isMacPlatform ? 3 : 1;
+  const effectiveTypingIntervalMs = isMacPlatform
+    ? Math.max(typingIntervalMs - 12, 16)
+    : typingIntervalMs;
 
   useEffect(() => {
     if (typeof Audio === "undefined") {
@@ -125,9 +132,11 @@ export default function PDialog({
 
     typingTimerRef.current = window.setTimeout(() => {
       const nextChar = value.charAt(renderedValue.length);
-      setRenderedValue(value.slice(0, renderedValue.length + 1));
+      setRenderedValue(
+        value.slice(0, Math.min(value.length, renderedValue.length + typingChunkSize)),
+      );
       playTypingSound(nextChar);
-    }, typingIntervalMs);
+    }, effectiveTypingIntervalMs);
 
     return () => {
       if (typingTimerRef.current !== null) {
@@ -135,7 +144,13 @@ export default function PDialog({
         typingTimerRef.current = null;
       }
     };
-  }, [isSpeaking, renderedValue, typingIntervalMs, value]);
+  }, [
+    effectiveTypingIntervalMs,
+    isSpeaking,
+    renderedValue,
+    typingChunkSize,
+    value,
+  ]);
 
   if (!renderedValue.trim()) {
     return null;
