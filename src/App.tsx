@@ -1,7 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState, type ReactNode } from "react";
-import { cursorPosition, getCurrentWindow } from "@tauri-apps/api/window";
 import {
   BrowserRouter as Router,
   Routes,
@@ -20,8 +19,6 @@ import {
   disableClick,
   enableClick,
   ghostModeRegionProps,
-  isWindowsGhostModePlatform,
-  reconcileGhostModeFromPoint,
 } from "@/lib/ghost-mode";
 import {
   getInitialSetupStatus,
@@ -115,28 +112,13 @@ function App() {
   const [showSetupCompletePrompt, setShowSetupCompletePrompt] = useState(false);
 
   useEffect(() => {
-    const handleWindowMouseEnter = (event: MouseEvent) => {
-      console.debug("[ghost-mode]", "window:mouseenter", {
-        clientX: event.clientX,
-        clientY: event.clientY,
-        isWindows: isWindowsGhostModePlatform(),
-      });
-
-      if (isWindowsGhostModePlatform()) {
-        enableClick();
-        return;
-      }
-
+    const handleWindowMouseEnter = () => {
       disableClick();
     };
     const handleWindowDeactivation = () => {
-      console.debug("[ghost-mode]", "window:blur");
       enableClick();
     };
     const handleVisibilityChange = () => {
-      console.debug("[ghost-mode]", "document:visibilitychange", {
-        hidden: document.hidden,
-      });
       if (document.hidden) {
         enableClick();
       }
@@ -145,64 +127,7 @@ function App() {
     window.addEventListener("mouseenter", handleWindowMouseEnter);
     window.addEventListener("blur", handleWindowDeactivation);
     document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    let disposed = false;
-    let unlistenMoved: (() => void) | null = null;
-
-    if (isWindowsGhostModePlatform()) {
-      void getCurrentWindow()
-        .onMoved(async ({ payload }) => {
-          try {
-            const pointer = await cursorPosition();
-            if (disposed) {
-              return;
-            }
-
-            const scale = window.devicePixelRatio || 1;
-            const clientX = (pointer.x - payload.x) / scale;
-            const clientY = (pointer.y - payload.y) / scale;
-
-            console.debug("[ghost-mode]", "window:moved", {
-              windowX: payload.x,
-              windowY: payload.y,
-              pointerX: pointer.x,
-              pointerY: pointer.y,
-              clientX,
-              clientY,
-              innerWidth: window.innerWidth,
-              innerHeight: window.innerHeight,
-              scale,
-            });
-
-            if (
-              clientX >= 0 &&
-              clientY >= 0 &&
-              clientX <= window.innerWidth &&
-              clientY <= window.innerHeight
-            ) {
-              reconcileGhostModeFromPoint(clientX, clientY);
-            } else {
-              disableClick();
-            }
-          } catch (error) {
-            console.debug("[ghost-mode]", "window:moved:error", error);
-          }
-        })
-        .then((unlisten) => {
-          if (disposed) {
-            unlisten();
-            return;
-          }
-          unlistenMoved = unlisten;
-        })
-        .catch((error) => {
-          console.debug("[ghost-mode]", "window:moved:listen-error", error);
-        });
-    }
-
     return () => {
-      disposed = true;
-      unlistenMoved?.();
       window.removeEventListener("mouseenter", handleWindowMouseEnter);
       window.removeEventListener("blur", handleWindowDeactivation);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
