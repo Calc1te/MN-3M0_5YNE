@@ -359,6 +359,7 @@ export default function BartenderMain({
         value={displayedMessage}
         readOnly
         isSpeaking={isSpeaking}
+        typingSpeed={config.Dialog_Typing_Speed}
         font="normal"
         rows={6}
         containerClassName="w-full"
