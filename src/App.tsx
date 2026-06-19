@@ -13,7 +13,7 @@ import "./App.css";
 import Menu from "./components/views/menu.tsx";
 import About from "./components/views/settings/about.tsx";
 import BartenderMain from "./components/views/bartender_main.tsx";
-import DebugMenu from "./components/debug.tsx";
+// import DebugMenu from "./components/debug.tsx";
 import InitialSetup from "./components/views/initial_setup.tsx";
 import SettingsPanel from "./components/views/settings/panel.tsx";
 import {
@@ -73,7 +73,7 @@ function AppRoutes({
                   showSetupCompletePrompt={showSetupCompletePrompt}
                   onSetupCompletePromptShown={onSetupCompletePromptShown}
                 />
-                <DebugMenu />
+                {/* <DebugMenu /> */}
               </main>
             </PanelTransition>
           }
