@@ -2,7 +2,9 @@ import i18n from "i18next";
 import LanguageDetector from "i18next-browser-languagedetector";
 import { initReactI18next } from "react-i18next";
 import enTranslation from "./locales/en/translation.json";
+import jpTranslation from "./locales/jp/translation.json";
 import zhCnTranslation from "./locales/zh-CN/translation.json";
+import { resolveAppLanguage, type AppLanguage } from "@/lib/language";
 
 const resources = {
   en: {
@@ -10,6 +12,9 @@ const resources = {
   },
   "zh-CN": {
     translation: zhCnTranslation,
+  },
+  jp: {
+    translation: jpTranslation,
   },
 } as const;
 
@@ -19,7 +24,7 @@ i18n
   .init({
     resources,
     fallbackLng: "en",
-    supportedLngs: ["en", "zh-CN"],
+    supportedLngs: ["en", "zh-CN", "jp"],
     interpolation: {
       escapeValue: false,
     },
@@ -30,8 +35,8 @@ i18n
     },
   });
 
-export function getCurrentLanguage(): "en" | "zh-CN" {
-  return i18n.resolvedLanguage === "zh-CN" ? "zh-CN" : "en";
+export function getCurrentLanguage(): AppLanguage {
+  return resolveAppLanguage(i18n.resolvedLanguage ?? i18n.language);
 }
 
 export default i18n;

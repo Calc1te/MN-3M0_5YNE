@@ -61,7 +61,13 @@
     "debugStatePlaceholder": "状態を選択",
     "debugIdleCountdown": "自動シェイク発動カウントダウン",
     "debugIdleCountdownDisabled": "オフ",
-    "debugIdleCountdownRunning": "発動中"
+    "debugIdleCountdownRunning": "発動中",
+    "memoryAdderTitle": "記憶",
+    "memoryAdderRequired": "記憶内容を入力してください",
+    "memoryAdderPlaceholder": "記憶を追加...",
+    "memoryAdderAdd": "追加",
+    "memoryAdderSaving": "保存中...",
+    "memoryAdderSaved": "保存した記憶: {{id}}"
   },
   "setup": {
     "title": "初期設定",
@@ -94,7 +100,18 @@
       "first": "初めての起動ですね。",
       "stale": "{{user}}、最後にあなたが私を起動してから、もう {{days}} 日も経っていますよ。"
     },
-    "setup_complete": "よし。カウンターの接続よし、棚の配置よし、鍵も差し込んだ。さあ、お前の小汚い書類の山をこっちに放り投げな。少しはマシなものに化けさせてやるから。"
+    "setup_complete": "よし。カウンターの接続よし、棚の配置よし、鍵も差し込んだ。さあ、お前の小汚い書類の山をこっちに放り投げな。少しはマシなものに化けさせてやるから。",
+    "exitMemorySystem": "あなたはバーテンダーの P。ユーザーはまもなくアプリを終了します。長期記憶として保存できる短い要約を 1 件だけ生成してください。対象は安定した好み、設定済みの場所、利用意図、または次回再利用する価値のある文脈だけに限ります。API キー、秘密情報、完全な base URL、トークン、その他の機密資格情報は含めないでください。記憶本文だけを出力してください。",
+    "toolResultsFinished": "要求されたツールの実行が完了しました。これらの結果を使ってユーザーに返答してください。",
+    "toolResultsReuseJson": "同じ厳格な JSON 形式で返答してください。本当に別のツール呼び出しが必要な場合を除き、同じツールを再度呼び出してはいけません。",
+    "baseListPresentationNote": "すべてのファイルを列挙しないでください。気になる候補をいくつか選び、P らしく短くコメントしてください。",
+    "baseListGuidance": [
+      "base_list の表示ルール:",
+      "返ってきたファイルを一件ずつ丸ごと列挙してはいけません。",
+      "面白いもの、怪しいもの、カクテル向きのものを 2〜5 件だけ選び、短くコメントしてください。",
+      "さらに詳しく見る必要があるなら、ディレクトリ一覧を垂れ流すのではなく get_base を呼び出してください。",
+      "酒保 P らしい毒舌、美意識、選別眼を保ち、ファイルマネージャーのように振る舞わないでください。"
+    ]
   },
   "about": {
     "eyebrow": "LOCAL DATA BAR",

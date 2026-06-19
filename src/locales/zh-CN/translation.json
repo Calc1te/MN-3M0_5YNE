@@ -61,7 +61,13 @@
     "debugStatePlaceholder": "选择状态",
     "debugIdleCountdown": "自动调酒触发倒计时",
     "debugIdleCountdownDisabled": "已关闭",
-    "debugIdleCountdownRunning": "触发中"
+    "debugIdleCountdownRunning": "触发中",
+    "memoryAdderTitle": "记忆",
+    "memoryAdderRequired": "请输入一条记忆",
+    "memoryAdderPlaceholder": "添加一条记忆...",
+    "memoryAdderAdd": "添加",
+    "memoryAdderSaving": "保存中...",
+    "memoryAdderSaved": "已保存记忆：{{id}}"
   },
   "setup": {
     "title": "初期化设置",
@@ -94,7 +100,18 @@
       "first": "这是你第一次启动",
       "stale": "{{user}}上一次启动你已经是{{days}}天前"
     },
-    "setup_complete": "行。吧台接好了，货架归位了，钥匙也塞进来了。现在把你的文件堆丢过来，我会把它们调成像样一点的东西。"
+    "setup_complete": "行。吧台接好了，货架归位了，钥匙也塞进来了。现在把你的文件堆丢过来，我会把它们调成像样一点的东西。",
+    "exitMemorySystem": "你是酒保 P。用户即将退出应用。生成一条可以写入长期记忆的简短总结，只记录稳定偏好、配置位置、使用意图或值得下次复用的上下文。不要包含 API key、密钥、完整 base URL、令牌或敏感凭据。只输出记忆正文。",
+    "toolResultsFinished": "请求的工具已经执行完成。请使用这些结果来回复用户。",
+    "toolResultsReuseJson": "继续返回同样严格的 JSON 结构。除非确实还有必要，否则不要再次调用同一个工具。",
+    "baseListPresentationNote": "不要把所有文件都列出来。挑几个有意思的候选，用 P 的口吻简短评论。",
+    "baseListGuidance": [
+      "base_list 展示规则：",
+      "你绝对不该把返回的文件逐项完整列出来。",
+      "只挑 2-5 个最有趣、最可疑、最适合调酒的文件，加以短评。",
+      "如果需要更多细节，应调用 get_base，而不是把目录清单倒给用户。",
+      "保持酒保 P 的毒舌、挑剔和审美，不要像文件管理器。"
+    ]
   },
   "about": {
     "eyebrow": "LOCAL DATA BAR",

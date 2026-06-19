@@ -49,6 +49,7 @@ import {
   getDialogTypingIntervalMs,
   type DialogTypingSpeed,
 } from "@/lib/dialog-typing-speed";
+import { getUIFontClass, resolveAppLanguage, usesPixelUiFont } from "@/lib/language";
 import { cn } from "@/lib/utils";
 
 type ServiceStatus = "unknown" | "checking" | "online" | "offline";
@@ -57,9 +58,10 @@ export default function SettingsPanel() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const language = i18n.resolvedLanguage ?? i18n.language;
-  const isZh = Boolean(language && language.startsWith("zh"));
-  const selectValue =
-    language === "zh-CN" ? "zh-CN" : language === "jp" ? "jp" : "en";
+  const resolvedLanguage = resolveAppLanguage(language);
+  const uiFontClass = getUIFontClass(language);
+  const usesPixelFont = usesPixelUiFont(language);
+  const selectValue = resolvedLanguage;
   const [config, setConfig] = useState<AppConfig>(() => buildDefaultAppConfig());
   const [configStatus, setConfigStatus] = useState<string | null>(null);
   const [exitStatus, setExitStatus] = useState<string | null>(null);
@@ -365,7 +367,7 @@ export default function SettingsPanel() {
   };
 
   return (
-    <main className={cn("container flex flex-col gap-6", isZh && "font-ui-cn")}>
+    <main className={cn("container flex flex-col gap-6", uiFontClass)}>
       <Card className="w-full max-w-3xl">
         <CardHeader>
           <div className="flex flex-col gap-1">
@@ -548,7 +550,7 @@ export default function SettingsPanel() {
               value={config.API_Key}
               onChange={(event) => updateConfig({ API_Key: event.target.value })}
               placeholder={t("ui.apiKeyPlaceholder")}
-              font="normal"
+              font={usesPixelFont ? "normal" : undefined}
             />
             <Input
               value={config.Chat_Base_URL}
@@ -556,7 +558,7 @@ export default function SettingsPanel() {
                 updateConfig({ Chat_Base_URL: event.target.value })
               }
               placeholder={t("ui.chatBaseUrlPlaceholder")}
-              font="normal"
+              font={usesPixelFont ? "normal" : undefined}
             />
             <Input
               value={config.Chat_Model}
@@ -564,7 +566,7 @@ export default function SettingsPanel() {
                 updateConfig({ Chat_Model: event.target.value })
               }
               placeholder={t("ui.chatModelPlaceholder")}
-              font="normal"
+              font={usesPixelFont ? "normal" : undefined}
             />
             <Input
               value={config.Embedding_Base_URL}
@@ -572,7 +574,7 @@ export default function SettingsPanel() {
                 updateConfig({ Embedding_Base_URL: event.target.value })
               }
               placeholder={t("ui.embeddingBaseUrlPlaceholder")}
-              font="normal"
+              font={usesPixelFont ? "normal" : undefined}
             />
             <Input
               value={config.Embedding_Model}
@@ -580,7 +582,7 @@ export default function SettingsPanel() {
                 updateConfig({ Embedding_Model: event.target.value })
               }
               placeholder={t("ui.embeddingModelPlaceholder")}
-              font="normal"
+              font={usesPixelFont ? "normal" : undefined}
             />
             <div className="flex flex-col gap-1 text-xs text-white/70">
               <div className="flex items-center justify-between gap-3">

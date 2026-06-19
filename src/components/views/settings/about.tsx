@@ -9,13 +9,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { getUIFontClass } from "@/lib/language";
 import { cn } from "@/lib/utils";
 
 export default function About() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const language = i18n.resolvedLanguage ?? i18n.language;
-  const isZh = Boolean(language && language.startsWith("zh"));
+  const uiFontClass = getUIFontClass(language);
   const avatar = "/assets/abouts/IMG_1427.PNG";
   const paragraphs = t("about.paragraphs", { returnObjects: true }) as string[];
   const imageSlots = t("about.imageSlots", { returnObjects: true }) as string[];
@@ -24,7 +25,7 @@ export default function About() {
     <main
       className={cn(
         "container flex min-h-screen flex-col gap-8 px-6 py-8 text-white",
-        isZh && "font-ui-cn",
+        uiFontClass,
       )}
     >
       <Card className="w-full max-w-5xl">

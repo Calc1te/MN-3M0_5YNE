@@ -24,6 +24,7 @@ import {
   isFriendMode,
   type AppConfig,
 } from "@/lib/app-config";
+import { getUIFontClass, resolveAppLanguage, usesPixelUiFont } from "@/lib/language";
 import { cn } from "@/lib/utils";
 
 type SetupStep = "language" | "bar" | "base" | "api";
@@ -39,7 +40,9 @@ export default function InitialSetup({
 }: InitialSetupProps) {
   const { t, i18n } = useTranslation();
   const language = i18n.resolvedLanguage ?? i18n.language;
-  const isZh = Boolean(language && language.startsWith("zh"));
+  const resolvedLanguage = resolveAppLanguage(language);
+  const uiFontClass = getUIFontClass(language);
+  const usesPixelFont = usesPixelUiFont(language);
   const [step, setStep] = useState<SetupStep>("language");
   const [config, setConfig] = useState<AppConfig>(
     () => initialConfig ?? buildDefaultAppConfig(),
@@ -128,7 +131,7 @@ export default function InitialSetup({
       ));
 
   return (
-    <main className={cn("container flex min-h-screen flex-col justify-center gap-6 px-8", isZh && "font-ui-cn")}>
+    <main className={cn("container flex min-h-screen flex-col justify-center gap-6 px-8", uiFontClass)}>
       <Card className="w-full max-w-xl text-white">
         <CardHeader>
           <div className="flex items-center justify-between gap-4">
@@ -146,7 +149,9 @@ export default function InitialSetup({
           <div className="flex flex-col gap-3">
             <span className="text-sm">{t("setup.language")}</span>
             <Select
-              value={language === "zh-CN" ? "zh-CN" : "en"}
+              value={
+                resolvedLanguage
+              }
               onValueChange={(value) => void i18n.changeLanguage(value)}
             >
               <SelectTrigger font="normal">
@@ -201,35 +206,35 @@ export default function InitialSetup({
               value={config.API_Key}
               onChange={(event) => updateConfig({ API_Key: event.target.value })}
               placeholder={t("ui.apiKeyPlaceholder")}
-              font="normal"
+              font={usesPixelFont ? "normal" : undefined}
               className="bg-foreground text-background placeholder:text-background/60"
             />
             <Input
               value={config.Chat_Base_URL}
               onChange={(event) => updateConfig({ Chat_Base_URL: event.target.value })}
               placeholder={t("ui.chatBaseUrlPlaceholder")}
-              font="normal"
+              font={usesPixelFont ? "normal" : undefined}
               className="bg-foreground text-background placeholder:text-background/60"
             />
             <Input
               value={config.Chat_Model}
               onChange={(event) => updateConfig({ Chat_Model: event.target.value })}
               placeholder={t("ui.chatModelPlaceholder")}
-              font="normal"
+              font={usesPixelFont ? "normal" : undefined}
               className="bg-foreground text-background placeholder:text-background/60"
             />
             <Input
               value={config.Embedding_Base_URL}
               onChange={(event) => updateConfig({ Embedding_Base_URL: event.target.value })}
               placeholder={t("ui.embeddingBaseUrlPlaceholder")}
-              font="normal"
+              font={usesPixelFont ? "normal" : undefined}
               className="bg-foreground text-background placeholder:text-background/60"
             />
             <Input
               value={config.Embedding_Model}
               onChange={(event) => updateConfig({ Embedding_Model: event.target.value })}
               placeholder={t("ui.embeddingModelPlaceholder")}
-              font="normal"
+              font={usesPixelFont ? "normal" : undefined}
               className="bg-foreground text-background placeholder:text-background/60"
             />
           </div>

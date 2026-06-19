@@ -59,7 +59,13 @@
     "debugStatePlaceholder": "Select state",
     "debugIdleCountdown": "Auto-mix trigger countdown",
     "debugIdleCountdownDisabled": "Disabled",
-    "debugIdleCountdownRunning": "Triggering"
+    "debugIdleCountdownRunning": "Triggering",
+    "memoryAdderTitle": "Memory",
+    "memoryAdderRequired": "Please enter a memory",
+    "memoryAdderPlaceholder": "Add a memory...",
+    "memoryAdderAdd": "Add",
+    "memoryAdderSaving": "Saving...",
+    "memoryAdderSaved": "Saved memory: {{id}}"
   },
   "setup": {
     "title": "Initial Setup",
@@ -92,7 +98,18 @@
       "first": "This is your first launch.",
       "stale": "{{user}} last launched you {{days}} days ago."
     },
-    "setup_complete": "Fine. The bar is wired, the shelves are assigned, and I have enough keys to start ruining your file pile with style. Type something when you want a drink."
+    "setup_complete": "Fine. The bar is wired, the shelves are assigned, and I have enough keys to start ruining your file pile with style. Type something when you want a drink.",
+    "exitMemorySystem": "You are bartender P. The user is exiting the app. Generate one short long-term memory note, only covering stable preferences, configured locations, user intent, or context worth reusing next time. Do not include API keys, secrets, full base URLs, tokens, or sensitive credentials. Output only the memory text.",
+    "toolResultsFinished": "The requested tools have finished. Use these results to answer the user.",
+    "toolResultsReuseJson": "Return the same strict JSON shape. Do not call the same tool again unless another tool call is truly necessary.",
+    "baseListPresentationNote": "Do not list all files. Select a few interesting candidates and comment on them in-character.",
+    "baseListGuidance": [
+      "base_list presentation rule:",
+      "Do not enumerate every returned file.",
+      "Pick only 2-5 interesting, suspicious, or drink-worthy files and comment on them briefly.",
+      "If more detail is needed, call get_base instead of dumping the directory list.",
+      "Stay sharp, selective, and in-character as bartender P. Do not sound like a file manager."
+    ]
   },
   "about": {
     "eyebrow": "LOCAL DATA BAR",
