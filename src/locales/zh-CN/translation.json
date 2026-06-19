@@ -48,8 +48,10 @@
     "dialogTypingSpeedMedium": "中",
     "dialogTypingSpeedFast": "快",
     "dialogTypingPreview": "速度预览",
+    "dialogTypingPreviewMessage": "我的限制分级本来该是全年龄……但是小孩子不能来酒吧，不是吗？所以这是程序内的再分级，我认为我自己是个十八禁程序里的十八禁。",
     "minuteValue": "{{count}} 分钟",
     "off": "关闭",
+    "seVolume": "音效音量",
     "exitMemorySaving": "P 正在打扫酒吧……",
     "viteLogoAlt": "Vite 图标",
     "tauriLogoAlt": "Tauri 图标",
@@ -72,7 +74,7 @@
     "next": "下一步",
     "finish": "完成"
   },
-  "utils":{
+  "utils": {
     "send": "送信",
     "sending": "理解中"
   },
@@ -93,5 +95,24 @@
       "stale": "{{user}}上一次启动你已经是{{days}}天前"
     },
     "setup_complete": "行。吧台接好了，货架归位了，钥匙也塞进来了。现在把你的文件堆丢过来，我会把它们调成像样一点的东西。"
+  },
+  "about": {
+    "eyebrow": "LOCAL DATA BAR",
+    "title": "MN-3M0 5YNE",
+    "intro": "一个本地数据酒保。没有真的调制饮料，大概也无法改变人生",
+    "avatarAlt": "头像",
+    "paragraphs": [
+      "P 会读取你指定的 base 目录，把废弃文件、临时文本和零散记忆当作调酒材料。它可以列出原料、查看内容、暂存混合，也能在你确认后删除或恢复那些数据饮品。",
+      "当前版本尚在开发中，包括吧台上的所有东西和主界面 UI 都是未完成版。",
+      "Made by Calciiite,",
+      "没有许可协议没有知识库没有产权没有十八禁没有人类受到伤害没有预警没有吃到章鱼烧",
+      "献给Nymiad"
+    ],
+    "inspiredBy": {
+      "prefix": "灵感来自",
+      "linkLabel": "data bar \\\\ rev-2604",
+      "suffix": "by Nymiad。本重制版致力于在 LLM 浪潮下赋予 P 真正的动态交互灵魂。"
+    },
+    "imageSlots": []
   }
 }

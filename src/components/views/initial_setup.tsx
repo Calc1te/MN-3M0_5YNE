@@ -155,6 +155,7 @@ export default function InitialSetup({
               <SelectContent font="normal">
                 <SelectItem value="en">English</SelectItem>
                 <SelectItem value="zh-CN">中文</SelectItem>
+                <SelectItem value="jp">日本語</SelectItem>
               </SelectContent>
             </Select>
           </div>

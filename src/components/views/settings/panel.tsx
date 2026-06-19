@@ -58,7 +58,8 @@ export default function SettingsPanel() {
   const navigate = useNavigate();
   const language = i18n.resolvedLanguage ?? i18n.language;
   const isZh = Boolean(language && language.startsWith("zh"));
-  const selectValue = language === "zh-CN" ? "zh-CN" : "en";
+  const selectValue =
+    language === "zh-CN" ? "zh-CN" : language === "jp" ? "jp" : "en";
   const [config, setConfig] = useState<AppConfig>(() => buildDefaultAppConfig());
   const [configStatus, setConfigStatus] = useState<string | null>(null);
   const [exitStatus, setExitStatus] = useState<string | null>(null);
@@ -79,9 +80,7 @@ export default function SettingsPanel() {
   const [typingPreviewText, setTypingPreviewText] = useState("");
   const [isTypingPreviewSpeaking, setIsTypingPreviewSpeaking] = useState(false);
 
-  const typingPreviewMessage = isZh
-    ? "我的限制分级本来该是全年龄…但是小孩子不能来酒吧，不是吗？所以这是程序内的再分级，我认为我自己是个十八禁程序里的十八禁。"
-    : "My age rating was supposed to be “G”... but kids aren't allowed in bars, right? So this is a re-rating within the app, and I consider myself an “18+” content within an “18+” app.";
+  const typingPreviewMessage = t("ui.dialogTypingPreviewMessage");
 
   useEffect(() => {
     return () => {
@@ -515,13 +514,14 @@ export default function SettingsPanel() {
             <SelectContent font="normal">
               <SelectItem value="en">English</SelectItem>
               <SelectItem value="zh-CN">中文</SelectItem>
+              <SelectItem value="jp">日本語</SelectItem>
             </SelectContent>
           </Select>
         </section>
 
         <section className="flex w-full max-w-xl flex-col gap-3">
           <div className="flex items-center justify-between text-sm">
-            <span>{isZh ? "音效音量" : "SE Volume"}</span>
+            <span>{t("ui.seVolume")}</span>
             <span className="text-xs text-white/70">
               {Math.round(config.Audio_Volume_SE * 100)}%
             </span>
@@ -535,7 +535,7 @@ export default function SettingsPanel() {
               updateConfig({ Audio_Volume_SE: (value ?? 0) / 100 })
             }
             disabled={isExiting}
-            aria-label={isZh ? "音效音量" : "SE Volume"}
+            aria-label={t("ui.seVolume")}
             className="max-w-md"
           />
         </section>

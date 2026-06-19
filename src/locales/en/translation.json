@@ -48,8 +48,10 @@
     "dialogTypingSpeedMedium": "Medium",
     "dialogTypingSpeedFast": "Fast",
     "dialogTypingPreview": "Speed preview",
+    "dialogTypingPreviewMessage": "My age rating was supposed to be “G”... but kids aren't allowed in bars, right? So this is a re-rating within the app, and I consider myself an “18+” content within an “18+” app.",
     "minuteValue": "{{count}} min",
     "off": "Off",
+    "seVolume": "SE Volume",
     "exitMemorySaving": "P is cleaning the bar...",
     "about": "This is about page",
     "debug": "Debug",
@@ -75,7 +77,7 @@
     "settings": "Settings",
     "about": "About"
   },
-  "utils":{
+  "utils": {
     "send": "send",
     "sending": "thinking"
   },
@@ -91,5 +93,23 @@
       "stale": "{{user}} last launched you {{days}} days ago."
     },
     "setup_complete": "Fine. The bar is wired, the shelves are assigned, and I have enough keys to start ruining your file pile with style. Type something when you want a drink."
+  },
+  "about": {
+    "eyebrow": "LOCAL DATA BAR",
+    "title": "MN-3M0 5YNE",
+    "intro": "A local data bartender. Not actually mixing drinks, and probably won't change lives.",
+    "avatarAlt": "Avatar",
+    "paragraphs": [
+      "P reads your specified base directory, treating discarded files, temporary text, and fragmented memories as mixing ingredients. It can list materials, inspect content, stage mixes, and either permanently delete or restore those data drinks after your confirmation.",
+      "The current version is still in development; everything on the counter and the main UI are works in progress.",
+      "Made by Calciiite,",
+      "No license agreement, no knowledge base, no property rights, no R-18, no humans harmed, no trigger warnings, no takoyaki."
+    ],
+    "inspiredBy": {
+      "prefix": "Inspired by",
+      "linkLabel": "data bar \\\\ rev-2604",
+      "suffix": "by Nymiad. This remake is dedicated to giving P a true, dynamically interactive soul in the wave of LLMs."
+    },
+    "imageSlots": []
   }
 }
