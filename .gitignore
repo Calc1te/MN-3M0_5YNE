@@ -29,3 +29,6 @@ dist-ssr
 .env
 
 protoc/
+
+release-friend/
+**/target-friend/

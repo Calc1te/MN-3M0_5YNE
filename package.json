@@ -17,7 +17,7 @@
     "tauri:dev:friend": "node scripts/with-env.mjs VITE_FRIEND_MODE=true VITE_SIMULATE_FIRST_INSTALL=false -- npm run tauri -- dev",
     "tauri:dev:friend:first-install": "node scripts/with-env.mjs VITE_FRIEND_MODE=true VITE_SIMULATE_FIRST_INSTALL=true -- npm run tauri -- dev",
     "tauri:build": "npm run tauri -- build",
-    "tauri:build:friend": "node scripts/with-env.mjs VITE_FRIEND_MODE=true CARGO_TARGET_DIR=src-tauri/target-friend -- npm run tauri -- build --config src-tauri/tauri.friend.conf.json",
+    "tauri:build:friend": "node scripts/with-env.mjs VITE_FRIEND_MODE=true CARGO_TARGET_DIR=target-friend -- npm run tauri -- build --config src-tauri/tauri.friend.conf.json",
     "cargo:check": "cd src-tauri && node ../scripts/with-env.mjs PATH+=/opt/homebrew/opt/rustup/bin -- cargo check",
     "mcp:dev": "tsx src/mcp/server.ts",
     "mcp:sse": "tsx src/mcp/server.ts --sse"
