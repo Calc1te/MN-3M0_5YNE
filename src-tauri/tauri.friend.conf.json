@@ -1,0 +1,6 @@
+{
+  "build": {
+    "beforeBuildCommand": "npm run build:friend",
+    "frontendDist": "../release-friend"
+  }
+}
