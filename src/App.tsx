@@ -19,6 +19,9 @@ import {
   disableClick,
   enableClick,
   ghostModeRegionProps,
+  shouldUseGhostModeRecovery,
+  startGhostModeRecovery,
+  stopGhostModeRecovery,
 } from "@/lib/ghost-mode";
 import {
   getInitialSetupStatus,
@@ -115,23 +118,40 @@ function App() {
 
   useEffect(() => {
     const handleWindowMouseEnter = () => {
+      stopGhostModeRecovery();
       disableClick();
     };
     const handleWindowDeactivation = () => {
+      if (shouldUseGhostModeRecovery) {
+        startGhostModeRecovery();
+        return;
+      }
       enableClick();
     };
     const handleVisibilityChange = () => {
       if (document.hidden) {
+        if (shouldUseGhostModeRecovery) {
+          startGhostModeRecovery();
+          return;
+        }
         enableClick();
+        return;
       }
+      stopGhostModeRecovery();
+    };
+    const handleWindowFocus = () => {
+      stopGhostModeRecovery();
     };
 
     window.addEventListener("mouseenter", handleWindowMouseEnter);
     window.addEventListener("blur", handleWindowDeactivation);
+    window.addEventListener("focus", handleWindowFocus);
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
+      stopGhostModeRecovery();
       window.removeEventListener("mouseenter", handleWindowMouseEnter);
       window.removeEventListener("blur", handleWindowDeactivation);
+      window.removeEventListener("focus", handleWindowFocus);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       enableClick();
     };
