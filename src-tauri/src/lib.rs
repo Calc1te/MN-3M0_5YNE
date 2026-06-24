@@ -11,8 +11,8 @@ use serde::{Deserialize, Deserializer, Serialize};
 use std::sync::{Mutex, OnceLock};
 use std::{
     env,
-    fs::{self, File},
-    io::Read,
+    fs::{self, File, OpenOptions},
+    io::{Read, Write},
     path::{Path, PathBuf},
     process::Command,
     str,
@@ -28,6 +28,9 @@ use vector_db::lance::{self, MEMORY_VECTOR_DIMS, MemoryRecord};
 const DEFAULT_MAX_CHARS: usize = 2000;
 const BOOTSTRAP_FILE_NAME: &str = "bootstrap.json";
 const APP_CONFIG_FILE_NAME: &str = "configs.json";
+const LOGS_DIR_NAME: &str = "logs";
+const TAURI_LOG_FILE_NAME: &str = "tauri.log";
+const WEBVIEW_LOG_FILE_NAME: &str = "webview.log";
 
 #[derive(Clone)]
 struct ApiState;
@@ -155,9 +158,16 @@ fn current_base_dir() -> PathBuf {
 }
 
 fn bar_root_dir() -> Result<PathBuf, String> {
-    let root = resolve_bar_root_parent()?.join(".bar");
+    let root = resolve_bar_root_parent_silent()?.join(".bar");
     fs::create_dir_all(&root)
         .map_err(|e| format!("Failed to create bar directory {}: {e}", root.display()))?;
+    Ok(root)
+}
+
+fn bar_logs_dir() -> Result<PathBuf, String> {
+    let root = bar_root_dir()?.join(LOGS_DIR_NAME);
+    fs::create_dir_all(&root)
+        .map_err(|e| format!("Failed to create log directory {}: {e}", root.display()))?;
     Ok(root)
 }
 
@@ -321,37 +331,84 @@ fn legacy_bar_root_parent() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
-fn resolve_bar_root_parent() -> Result<PathBuf, String> {
+fn resolve_bar_root_parent_internal(log_events: bool) -> Result<PathBuf, String> {
     let bootstrap = read_bootstrap_config()?;
     if !bootstrap.bar_root_parent.trim().is_empty() {
         let path = PathBuf::from(bootstrap.bar_root_parent);
         if path.is_dir() {
-            eprintln!("[tauri] resolve_bar_root_parent:bootstrap path={}", path.display());
+            if log_events {
+                log_tauri_message(format!(
+                    "resolve_bar_root_parent:bootstrap path={}",
+                    path.display()
+                ));
+            }
             return Ok(path);
         }
-        eprintln!(
-            "[tauri] resolve_bar_root_parent:bootstrap_invalid path={}",
-            path.display()
-        );
+        if log_events {
+            log_tauri_message(format!(
+                "resolve_bar_root_parent:bootstrap_invalid path={}",
+                path.display()
+            ));
+        }
     }
 
     let legacy = legacy_bar_root_parent();
     if legacy.exists() {
-        eprintln!(
-            "[tauri] resolve_bar_root_parent:legacy path={}",
-            legacy.display()
-        );
+        if log_events {
+            log_tauri_message(format!(
+                "resolve_bar_root_parent:legacy path={}",
+                legacy.display()
+            ));
+        }
         return Ok(legacy);
     }
 
     let fallback = dirs::home_dir()
         .or_else(dirs::desktop_dir)
         .ok_or_else(|| "Failed to resolve default bar root parent".to_string())?;
-    eprintln!(
-        "[tauri] resolve_bar_root_parent:fallback path={}",
-        fallback.display()
-    );
+    if log_events {
+        log_tauri_message(format!(
+            "resolve_bar_root_parent:fallback path={}",
+            fallback.display()
+        ));
+    }
     Ok(fallback)
+}
+
+fn resolve_bar_root_parent() -> Result<PathBuf, String> {
+    resolve_bar_root_parent_internal(true)
+}
+
+fn resolve_bar_root_parent_silent() -> Result<PathBuf, String> {
+    resolve_bar_root_parent_internal(false)
+}
+
+fn format_log_line(source: &str, message: &str) -> String {
+    format!(
+        "{} [{}] {}",
+        Local::now().format("%Y-%m-%d %H:%M:%S%.3f"),
+        source,
+        message
+    )
+}
+
+fn append_log_line(file_name: &str, line: &str) -> Result<(), String> {
+    let path = bar_logs_dir()?.join(file_name);
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .map_err(|e| format!("Failed to open log file {}: {e}", path.display()))?;
+    writeln!(file, "{line}")
+        .map_err(|e| format!("Failed to write log file {}: {e}", path.display()))
+}
+
+fn log_tauri_message(message: impl AsRef<str>) {
+    let line = format_log_line("tauri", message.as_ref());
+    if let Err(error) = append_log_line(TAURI_LOG_FILE_NAME, &line) {
+        eprintln!("[tauri] failed_to_write_log error={error}");
+    }
+    eprintln!("{line}");
 }
 
 fn config_path() -> Result<PathBuf, String> {
@@ -363,10 +420,16 @@ fn legacy_config_paths() -> Result<Vec<PathBuf>, String> {
     let mut candidates = Vec::new();
 
     if !bootstrap.bar_root_parent.trim().is_empty() {
-        candidates.push(PathBuf::from(&bootstrap.bar_root_parent).join(".bar").join(APP_CONFIG_FILE_NAME));
+        candidates.push(
+            PathBuf::from(&bootstrap.bar_root_parent)
+                .join(".bar")
+                .join(APP_CONFIG_FILE_NAME),
+        );
     }
 
-    let legacy = legacy_bar_root_parent().join(".bar").join(APP_CONFIG_FILE_NAME);
+    let legacy = legacy_bar_root_parent()
+        .join(".bar")
+        .join(APP_CONFIG_FILE_NAME);
     if !candidates.iter().any(|path| path == &legacy) {
         candidates.push(legacy);
     }
@@ -388,10 +451,10 @@ fn normalize_bar_root_parent_value(value: &str) -> Result<String, String> {
             .into_owned()),
         Ok(_) | Err(_) => {
             let fallback = resolve_bar_root_parent()?.to_string_lossy().into_owned();
-            eprintln!(
-                "[tauri] normalize_bar_root_parent:fallback invalid={} fallback={}",
+            log_tauri_message(format!(
+                "normalize_bar_root_parent:fallback invalid={} fallback={}",
                 trimmed, fallback
-            );
+            ));
             Ok(fallback)
         }
     }
@@ -422,8 +485,8 @@ fn normalize_loaded_config(config: &mut BarConfig) -> Result<bool, String> {
 fn read_config() -> Result<BarConfig, String> {
     let path = config_path()?;
     if path.exists() {
-        let bytes =
-            fs::read(&path).map_err(|e| format!("Failed to read config {}: {e}", path.display()))?;
+        let bytes = fs::read(&path)
+            .map_err(|e| format!("Failed to read config {}: {e}", path.display()))?;
         let mut config: BarConfig = serde_json::from_slice(&bytes)
             .map_err(|e| format!("Failed to parse config {}: {e}", path.display()))?;
         if normalize_loaded_config(&mut config)? {
@@ -437,12 +500,16 @@ fn read_config() -> Result<BarConfig, String> {
             continue;
         }
 
-        eprintln!(
-            "[tauri] read_config:migrate_from_legacy path={}",
+        log_tauri_message(format!(
+            "read_config:migrate_from_legacy path={}",
             legacy_path.display()
-        );
-        let bytes = fs::read(&legacy_path)
-            .map_err(|e| format!("Failed to read legacy config {}: {e}", legacy_path.display()))?;
+        ));
+        let bytes = fs::read(&legacy_path).map_err(|e| {
+            format!(
+                "Failed to read legacy config {}: {e}",
+                legacy_path.display()
+            )
+        })?;
         let mut config: BarConfig = serde_json::from_slice(&bytes).map_err(|e| {
             format!(
                 "Failed to parse legacy config {}: {e}",
@@ -462,8 +529,12 @@ fn read_config() -> Result<BarConfig, String> {
 fn write_config(config: &BarConfig) -> Result<(), String> {
     let path = config_path()?;
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create config directory {}: {e}", parent.display()))?;
+        fs::create_dir_all(parent).map_err(|e| {
+            format!(
+                "Failed to create config directory {}: {e}",
+                parent.display()
+            )
+        })?;
     }
     let bytes = serde_json::to_vec_pretty(config)
         .map_err(|e| format!("Failed to serialize config {}: {e}", path.display()))?;
@@ -538,7 +609,7 @@ fn set_current_base_dir(path: PathBuf) {
 
 fn memory_db_dir() -> Result<PathBuf, String> {
     let dir = bar_root_dir()?.join("memory.lancedb");
-    eprintln!("[tauri] memory_db_dir:path={}", dir.display());
+    log_tauri_message(format!("memory_db_dir:path={}", dir.display()));
     fs::create_dir_all(&dir).map_err(|e| {
         format!(
             "Failed to create memory DB directory {}: {e}",
@@ -1219,8 +1290,27 @@ fn set_always_on_top(window: WebviewWindow, always_on_top: bool) -> Result<(), S
 
 #[tauri::command]
 fn quit_app(app: AppHandle) {
-    eprintln!("[tauri] quit_app:invoked");
+    log_tauri_message("quit_app:invoked");
     app.exit(0);
+}
+
+#[tauri::command]
+fn append_web_log(level: String, message: String) -> Result<(), String> {
+    let normalized_level = level.trim().to_lowercase();
+    let level_label = if normalized_level.is_empty() {
+        "log"
+    } else {
+        normalized_level.as_str()
+    };
+    let trimmed = message.trim();
+    if trimmed.is_empty() {
+        return Ok(());
+    }
+
+    append_log_line(
+        WEBVIEW_LOG_FILE_NAME,
+        &format_log_line(&format!("webview/{level_label}"), trimmed),
+    )
 }
 
 async fn health() -> Json<HealthResponse> {
@@ -1335,12 +1425,12 @@ async fn start_local_api() -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     if let Err(error) = initialize_startup_context() {
-        eprintln!("{error}");
+        log_tauri_message(error);
     }
 
     tauri::async_runtime::spawn(async move {
         if let Err(error) = start_local_api().await {
-            eprintln!("{error}");
+            log_tauri_message(error);
         }
     });
 
@@ -1350,10 +1440,10 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::CloseRequested { .. } => {
-                eprintln!("[tauri] window:close_requested label={}", window.label());
+                log_tauri_message(format!("window:close_requested label={}", window.label()));
             }
             tauri::WindowEvent::Destroyed => {
-                eprintln!("[tauri] window:destroyed label={}", window.label());
+                log_tauri_message(format!("window:destroyed label={}", window.label()));
             }
             _ => {}
         })
@@ -1410,16 +1500,17 @@ pub fn run() {
             get_time_and_date,
             set_ghost_mode,
             set_always_on_top,
+            append_web_log,
             quit_app
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|_app_handle, event| match event {
             tauri::RunEvent::ExitRequested { code, .. } => {
-                eprintln!("[tauri] run_event:exit_requested code={code:?}");
+                log_tauri_message(format!("run_event:exit_requested code={code:?}"));
             }
             tauri::RunEvent::Exit => {
-                eprintln!("[tauri] run_event:exit");
+                log_tauri_message("run_event:exit");
             }
             _ => {}
         });
