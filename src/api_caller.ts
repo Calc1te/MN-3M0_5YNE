@@ -513,7 +513,8 @@ export async function checkChatModelConnection(
   const completion = await openai.chat.completions.create({
     model: config.chatModel,
     temperature: 0,
-    messages: await toChatMessages([], "ping"),
+    max_tokens: 1,
+    messages: [{ role: "user", content: "ping" }],
   });
 
   const content = completion.choices[0]?.message?.content;
