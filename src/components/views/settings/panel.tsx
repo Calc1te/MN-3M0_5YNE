@@ -543,69 +543,77 @@ export default function SettingsPanel() {
           />
         </section>
 
-        {!isFriendMode && (
-          <section className="flex w-full max-w-xl flex-col gap-3">
-            <span className="text-sm">{t("ui.apiConfig")}</span>
-            <Input
-              type="password"
-              value={config.API_Key}
-              onChange={(event) => updateConfig({ API_Key: event.target.value })}
-              placeholder={t("ui.apiKeyPlaceholder")}
-              font={usesPixelFont ? "normal" : undefined}
-            />
-            <Input
-              value={config.Chat_Base_URL}
-              onChange={(event) =>
-                updateConfig({ Chat_Base_URL: event.target.value })
-              }
-              placeholder={t("ui.chatBaseUrlPlaceholder")}
-              font={usesPixelFont ? "normal" : undefined}
-            />
-            <Input
-              value={config.Chat_Model}
-              onChange={(event) =>
-                updateConfig({ Chat_Model: event.target.value })
-              }
-              placeholder={t("ui.chatModelPlaceholder")}
-              font={usesPixelFont ? "normal" : undefined}
-            />
-            <Input
-              value={config.Embedding_Base_URL}
-              onChange={(event) =>
-                updateConfig({ Embedding_Base_URL: event.target.value })
-              }
-              placeholder={t("ui.embeddingBaseUrlPlaceholder")}
-              font={usesPixelFont ? "normal" : undefined}
-            />
-            <Input
-              value={config.Embedding_Model}
-              onChange={(event) =>
-                updateConfig({ Embedding_Model: event.target.value })
-              }
-              placeholder={t("ui.embeddingModelPlaceholder")}
-              font={usesPixelFont ? "normal" : undefined}
-            />
-            <div className="flex flex-col gap-1 text-xs text-white/70">
-              <div className="flex items-center justify-between gap-3">
-                <span>{t("ui.chatModelConnection")}</span>
-                <span className={getStatusClassName(chatModelStatus)}>
-                  {getStatusLabel(chatModelStatus)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <span>{t("ui.embeddingModelConnection")}</span>
-                <span className={getStatusClassName(embeddingModelStatus)}>
-                  {getStatusLabel(embeddingModelStatus)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <span>{t("ui.lanceConnection")}</span>
-                <span className={getStatusClassName(lanceStatus)}>
-                  {getStatusLabel(lanceStatus)}
-                </span>
-              </div>
+        <section className="flex w-full max-w-xl flex-col gap-3">
+          {!isFriendMode && (
+            <>
+              <span className="text-sm">{t("ui.apiConfig")}</span>
+              <Input
+                type="password"
+                value={config.API_Key}
+                onChange={(event) => updateConfig({ API_Key: event.target.value })}
+                placeholder={t("ui.apiKeyPlaceholder")}
+                font={usesPixelFont ? "normal" : undefined}
+              />
+              <Input
+                value={config.Chat_Base_URL}
+                onChange={(event) =>
+                  updateConfig({ Chat_Base_URL: event.target.value })
+                }
+                placeholder={t("ui.chatBaseUrlPlaceholder")}
+                font={usesPixelFont ? "normal" : undefined}
+              />
+              <Input
+                value={config.Chat_Model}
+                onChange={(event) =>
+                  updateConfig({ Chat_Model: event.target.value })
+                }
+                placeholder={t("ui.chatModelPlaceholder")}
+                font={usesPixelFont ? "normal" : undefined}
+              />
+              <Input
+                value={config.Embedding_Base_URL}
+                onChange={(event) =>
+                  updateConfig({ Embedding_Base_URL: event.target.value })
+                }
+                placeholder={t("ui.embeddingBaseUrlPlaceholder")}
+                font={usesPixelFont ? "normal" : undefined}
+              />
+              <Input
+                value={config.Embedding_Model}
+                onChange={(event) =>
+                  updateConfig({ Embedding_Model: event.target.value })
+                }
+                placeholder={t("ui.embeddingModelPlaceholder")}
+                font={usesPixelFont ? "normal" : undefined}
+              />
+            </>
+          )}
+
+          {isFriendMode && (
+            <span className="text-sm">{t("ui.checkConnections")}</span>
+          )}
+          <div className="flex flex-col gap-1 text-xs text-white/70">
+            <div className="flex items-center justify-between gap-3">
+              <span>{t("ui.chatModelConnection")}</span>
+              <span className={getStatusClassName(chatModelStatus)}>
+                {getStatusLabel(chatModelStatus)}
+              </span>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center justify-between gap-3">
+              <span>{t("ui.embeddingModelConnection")}</span>
+              <span className={getStatusClassName(embeddingModelStatus)}>
+                {getStatusLabel(embeddingModelStatus)}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span>{t("ui.lanceConnection")}</span>
+              <span className={getStatusClassName(lanceStatus)}>
+                {getStatusLabel(lanceStatus)}
+              </span>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            {!isFriendMode && (
               <Button
                 onClick={() => void handleSaveConfig()}
                 font="normal"
@@ -613,24 +621,24 @@ export default function SettingsPanel() {
               >
                 {t("ui.configSave")}
               </Button>
-              <Button
-                onClick={() => void handleCheckModelConnections()}
-                font="normal"
-                className="h-9 shrink-0 px-4"
-                disabled={isCheckingModels || isExiting}
-              >
-                {isCheckingModels
-                  ? t("ui.connectionChecking")
-                  : t("ui.checkConnections")}
-              </Button>
-              {configStatus && (
-                <div className="text-xs text-white/70">
-                  {configStatus}
-                </div>
-              )}
-            </div>
-          </section>
-        )}
+            )}
+            <Button
+              onClick={() => void handleCheckModelConnections()}
+              font="normal"
+              className="h-9 shrink-0 px-4"
+              disabled={isCheckingModels || isExiting}
+            >
+              {isCheckingModels
+                ? t("ui.connectionChecking")
+                : t("ui.checkConnections")}
+            </Button>
+            {configStatus && (
+              <div className="text-xs text-white/70">
+                {configStatus}
+              </div>
+            )}
+          </div>
+        </section>
 
         <DirectorySelector />
         </CardContent>
