@@ -510,12 +510,16 @@ export async function checkChatModelConnection(
   }
 
   const openai = createOpenAiClient(apiKey, config.chatBaseUrl);
-  await openai.chat.completions.create({
+  const completion = await openai.chat.completions.create({
     model: config.chatModel,
     temperature: 0,
-    max_tokens: 1,
-    messages: [{ role: "user", content: "ping" }],
+    messages: await toChatMessages([], "ping"),
   });
+
+  const content = completion.choices[0]?.message?.content;
+  if (!content) {
+    throw new Error(i18n.t("errors.emptyModelResponse"));
+  }
 }
 
 export async function checkEmbeddingModelConnection(
