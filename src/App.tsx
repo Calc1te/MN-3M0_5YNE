@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState, type ReactNode } from "react";
-import { cursorPosition } from "@tauri-apps/api/window";
+import { cursorPosition, getCurrentWindow } from "@tauri-apps/api/window";
 import {
   BrowserRouter as Router,
   Routes,
@@ -166,6 +166,8 @@ function App() {
       | null = null;
 
     if (isWindowsGhostModePlatform()) {
+      const currentWindow = getCurrentWindow();
+
       const pollGhostMode = async () => {
         if (disposed || pollInFlight) {
           return;
@@ -173,14 +175,18 @@ function App() {
 
         pollInFlight = true;
         try {
-          const pointer = await cursorPosition();
+          const [pointer, outerPosition, scale] = await Promise.all([
+            cursorPosition(),
+            currentWindow.outerPosition(),
+            currentWindow.scaleFactor(),
+          ]);
           if (disposed) {
             return;
           }
 
-          const scale = window.devicePixelRatio || 1;
-          const clientX = (pointer.x - window.screenX) / scale;
-          const clientY = (pointer.y - window.screenY) / scale;
+          const resolvedScale = scale || window.devicePixelRatio || 1;
+          const clientX = (pointer.x - outerPosition.x) / resolvedScale;
+          const clientY = (pointer.y - outerPosition.y) / resolvedScale;
           const insideWindow =
             clientX >= 0 &&
             clientY >= 0 &&
@@ -203,14 +209,14 @@ function App() {
             console.debug("[ghost-mode]", "windows:poll", {
               pointerX: pointer.x,
               pointerY: pointer.y,
-              screenX: window.screenX,
-              screenY: window.screenY,
+              outerX: outerPosition.x,
+              outerY: outerPosition.y,
               clientX: roundedSample.clientX,
               clientY: roundedSample.clientY,
               insideWindow,
               innerWidth: window.innerWidth,
               innerHeight: window.innerHeight,
-              scale,
+              scale: resolvedScale,
             });
             lastSample = roundedSample;
           }
