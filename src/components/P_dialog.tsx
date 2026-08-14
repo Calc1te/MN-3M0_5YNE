@@ -7,7 +7,10 @@ import {
   hydrateRuntimeAudioVolumes,
   subscribeAudioVolumes,
 } from "@/lib/audio-settings";
-import { getDialogTypingIntervalMs } from "@/lib/dialog-typing-speed";
+import {
+  getDialogTypingIntervalMs,
+  normalizeDialogTypingSpeed,
+} from "@/lib/dialog-typing-speed";
 import { cn } from "@/lib/utils";
 
 export type PDialogProps = Omit<BitTextareaProps, "value"> & {
@@ -33,46 +36,63 @@ export default function PDialog({
   const [renderedValue, setRenderedValue] = useState(value);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const typingTimerRef = useRef<number | null>(null);
-  const pauseTimerRef = useRef<number | null>(null);
-  const soundIndexRef = useRef(0);
   const typingIntervalMs = getDialogTypingIntervalMs(typingSpeed);
-  const typingChunkSize = 1;
-  const effectiveTypingIntervalMs = typingIntervalMs;
+  const dialogTypingSpeed = normalizeDialogTypingSpeed(typingSpeed);
+  const audioSrc = `/assets/sounds/Textsound_34_${dialogTypingSpeed}.ogg`;
 
   useEffect(() => {
     if (typeof Audio === "undefined") {
       return;
     }
 
-    const audio = createTaggedAudio("SE", "/assets/sounds/Textsound_34.ogg");
+    const audio = createTaggedAudio("SE", audioSrc);
     audio.preload = "auto";
+    audio.loop = true;
+    audio.preservesPitch = true;
     audioRef.current = audio;
     void hydrateRuntimeAudioVolumes().then((volumes) => {
-      if (audioRef.current) {
-        applyTaggedAudioVolume(audioRef.current, "SE", volumes);
+      if (audioRef.current === audio) {
+        applyTaggedAudioVolume(audio, "SE", volumes);
       }
     });
 
     const unsubscribe = subscribeAudioVolumes((volumes) => {
-      if (audioRef.current) {
-        applyTaggedAudioVolume(audioRef.current, "SE", volumes);
+      if (audioRef.current === audio) {
+        applyTaggedAudioVolume(audio, "SE", volumes);
       }
     });
 
     return () => {
       unsubscribe();
       audio.pause();
-      audioRef.current = null;
+      audio.currentTime = 0;
+      if (audioRef.current === audio) {
+        audioRef.current = null;
+      }
     };
-  }, []);
+  }, [audioSrc]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) {
+      return;
+    }
+
+    if (!isSpeaking || !value.trim()) {
+      audio.pause();
+      audio.currentTime = 0;
+      return;
+    }
+
+    if (audio.paused) {
+      void audio.play().catch(() => {});
+    }
+  }, [audioSrc, isSpeaking, value]);
 
   useEffect(() => {
     return () => {
       if (typingTimerRef.current !== null) {
         window.clearTimeout(typingTimerRef.current);
-      }
-      if (pauseTimerRef.current !== null) {
-        window.clearTimeout(pauseTimerRef.current);
       }
     };
   }, []);
@@ -80,7 +100,6 @@ export default function PDialog({
   useEffect(() => {
     if (!isSpeaking) {
       setRenderedValue(value);
-      soundIndexRef.current = 0;
       if (typingTimerRef.current !== null) {
         window.clearTimeout(typingTimerRef.current);
         typingTimerRef.current = null;
@@ -90,7 +109,6 @@ export default function PDialog({
 
     if (!value.startsWith(renderedValue)) {
       setRenderedValue("");
-      soundIndexRef.current = 0;
       return;
     }
 
@@ -98,40 +116,11 @@ export default function PDialog({
       return;
     }
 
-    const playTypingSound = (char: string) => {
-      if (!char.trim()) {
-        return;
-      }
-
-      const audio = audioRef.current;
-      if (!audio) {
-        return;
-      }
-
-      const totalNotes = 35;
-      const clipDuration = 3.671655 / totalNotes;
-      const nextIndex = soundIndexRef.current % totalNotes;
-      soundIndexRef.current += 1;
-
-      if (pauseTimerRef.current !== null) {
-        window.clearTimeout(pauseTimerRef.current);
-      }
-
-      audio.pause();
-      audio.currentTime = nextIndex * clipDuration;
-      void audio.play().catch(() => {});
-      pauseTimerRef.current = window.setTimeout(() => {
-        audio.pause();
-      }, clipDuration * 1000);
-    };
-
     typingTimerRef.current = window.setTimeout(() => {
-      const nextChar = value.charAt(renderedValue.length);
       setRenderedValue(
-        value.slice(0, Math.min(value.length, renderedValue.length + typingChunkSize)),
+        value.slice(0, Math.min(value.length, renderedValue.length + 1)),
       );
-      playTypingSound(nextChar);
-    }, effectiveTypingIntervalMs);
+    }, typingIntervalMs);
 
     return () => {
       if (typingTimerRef.current !== null) {
@@ -140,10 +129,9 @@ export default function PDialog({
       }
     };
   }, [
-    effectiveTypingIntervalMs,
+    typingIntervalMs,
     isSpeaking,
     renderedValue,
-    typingChunkSize,
     value,
   ]);
 
