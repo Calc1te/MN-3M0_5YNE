@@ -35,10 +35,18 @@ export default function PDialog({
 }: PDialogProps) {
   const [renderedValue, setRenderedValue] = useState(value);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioPlayPromiseRef = useRef<Promise<void> | null>(null);
+  const audioPlaybackGenerationRef = useRef(0);
   const typingTimerRef = useRef<number | null>(null);
   const typingIntervalMs = getDialogTypingIntervalMs(typingSpeed);
   const dialogTypingSpeed = normalizeDialogTypingSpeed(typingSpeed);
   const audioSrc = `/assets/sounds/Textsound_34_${dialogTypingSpeed}.ogg`;
+  const shouldPlayAudio = isSpeaking && Boolean(value.trim());
+
+  // Keep this in sync during render so a pending play() can see a newer
+  // isSpeaking/value state even before its effect runs.
+  const shouldPlayAudioRef = useRef(shouldPlayAudio);
+  shouldPlayAudioRef.current = shouldPlayAudio;
 
   useEffect(() => {
     if (typeof Audio === "undefined") {
@@ -64,6 +72,8 @@ export default function PDialog({
 
     return () => {
       unsubscribe();
+      audioPlaybackGenerationRef.current += 1;
+      audioPlayPromiseRef.current = null;
       audio.pause();
       audio.currentTime = 0;
       if (audioRef.current === audio) {
@@ -78,16 +88,38 @@ export default function PDialog({
       return;
     }
 
-    if (!isSpeaking || !value.trim()) {
+    if (!shouldPlayAudio) {
+      audioPlaybackGenerationRef.current += 1;
+      audioPlayPromiseRef.current = null;
       audio.pause();
       audio.currentTime = 0;
       return;
     }
 
-    if (audio.paused) {
-      void audio.play().catch(() => {});
+    if (!audio.paused || audioPlayPromiseRef.current) {
+      return;
     }
-  }, [audioSrc, isSpeaking, value]);
+
+    const generation = ++audioPlaybackGenerationRef.current;
+    const playPromise = audio.play();
+    audioPlayPromiseRef.current = playPromise;
+    void playPromise
+      .then(() => {
+        if (
+          audioPlaybackGenerationRef.current !== generation ||
+          !shouldPlayAudioRef.current
+        ) {
+          audio.pause();
+          audio.currentTime = 0;
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (audioPlayPromiseRef.current === playPromise) {
+          audioPlayPromiseRef.current = null;
+        }
+      });
+  }, [audioSrc, shouldPlayAudio]);
 
   useEffect(() => {
     return () => {
