@@ -1282,6 +1282,20 @@ async fn set_ghost_mode(window: WebviewWindow, ignore: bool) {
 }
 
 #[tauri::command]
+fn is_devtools_open(window: WebviewWindow) -> bool {
+    #[cfg(debug_assertions)]
+    {
+        return window.is_devtools_open();
+    }
+
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = window;
+        false
+    }
+}
+
+#[tauri::command]
 fn set_always_on_top(window: WebviewWindow, always_on_top: bool) -> Result<(), String> {
     window
         .set_always_on_top(always_on_top)
@@ -1499,6 +1513,7 @@ pub fn run() {
             check_lance_connection,
             get_time_and_date,
             set_ghost_mode,
+            is_devtools_open,
             set_always_on_top,
             append_web_log,
             quit_app

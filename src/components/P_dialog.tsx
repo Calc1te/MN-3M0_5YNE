@@ -35,14 +35,9 @@ export default function PDialog({
   const typingTimerRef = useRef<number | null>(null);
   const pauseTimerRef = useRef<number | null>(null);
   const soundIndexRef = useRef(0);
-  const isMacPlatform =
-    typeof navigator !== "undefined" &&
-    /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
   const typingIntervalMs = getDialogTypingIntervalMs(typingSpeed);
-  const typingChunkSize = isMacPlatform ? 3 : 1;
-  const effectiveTypingIntervalMs = isMacPlatform
-    ? Math.max(typingIntervalMs - 12, 16)
-    : typingIntervalMs;
+  const typingChunkSize = 1;
+  const effectiveTypingIntervalMs = typingIntervalMs;
 
   useEffect(() => {
     if (typeof Audio === "undefined") {
