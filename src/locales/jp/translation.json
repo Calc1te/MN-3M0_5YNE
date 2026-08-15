@@ -72,6 +72,10 @@
   "setup": {
     "title": "初期設定",
     "language": "言語選択",
+    "eula": "エンドユーザー使用許諾契約",
+    "eulaLoading": "使用許諾契約を読み込んでいます…",
+    "eulaLoadFailed": "使用許諾契約を読み込めませんでした。リソースファイルを確認して、もう一度お試しください。",
+    "eulaConfirm": "確認",
     "barParent": ".bar 親ディレクトリ",
     "chooseBarParent": "選択",
     "baseDir": "シェイク対象ディレクトリ",

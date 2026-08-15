@@ -18,6 +18,8 @@ export type PDialogProps = Omit<BitTextareaProps, "value"> & {
   containerClassName?: string;
   label?: string;
   isSpeaking?: boolean;
+  isContentComplete?: boolean;
+  onTypingComplete?: () => void;
   containerProps?: HTMLAttributes<HTMLDivElement>;
   typingSpeed?: string;
 };
@@ -26,6 +28,8 @@ export default function PDialog({
   value,
   label,
   isSpeaking = false,
+  isContentComplete = true,
+  onTypingComplete,
   containerClassName,
   containerProps,
   typingSpeed,
@@ -34,14 +38,17 @@ export default function PDialog({
   ...props
 }: PDialogProps) {
   const [renderedValue, setRenderedValue] = useState(value);
+  const [hasStartedTyping, setHasStartedTyping] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioPlayPromiseRef = useRef<Promise<void> | null>(null);
   const audioPlaybackGenerationRef = useRef(0);
+  const typingCompleteNotifiedRef = useRef(false);
   const typingTimerRef = useRef<number | null>(null);
   const typingIntervalMs = getDialogTypingIntervalMs(typingSpeed);
   const dialogTypingSpeed = normalizeDialogTypingSpeed(typingSpeed);
   const audioSrc = `/assets/sounds/Textsound_34_${dialogTypingSpeed}.ogg`;
-  const shouldPlayAudio = isSpeaking && Boolean(value.trim());
+  const shouldPlayAudio =
+    isSpeaking && hasStartedTyping && Boolean(value.trim());
 
   // Keep this in sync during render so a pending play() can see a newer
   // isSpeaking/value state even before its effect runs.
@@ -122,6 +129,32 @@ export default function PDialog({
   }, [audioSrc, shouldPlayAudio]);
 
   useEffect(() => {
+    if (
+      !isSpeaking ||
+      !isContentComplete ||
+      !hasStartedTyping ||
+      renderedValue !== value
+    ) {
+      typingCompleteNotifiedRef.current = false;
+      return;
+    }
+
+    if (typingCompleteNotifiedRef.current) {
+      return;
+    }
+
+    typingCompleteNotifiedRef.current = true;
+    onTypingComplete?.();
+  }, [
+    hasStartedTyping,
+    isContentComplete,
+    isSpeaking,
+    onTypingComplete,
+    renderedValue,
+    value,
+  ]);
+
+  useEffect(() => {
     return () => {
       if (typingTimerRef.current !== null) {
         window.clearTimeout(typingTimerRef.current);
@@ -132,6 +165,7 @@ export default function PDialog({
   useEffect(() => {
     if (!isSpeaking) {
       setRenderedValue(value);
+      setHasStartedTyping(false);
       if (typingTimerRef.current !== null) {
         window.clearTimeout(typingTimerRef.current);
         typingTimerRef.current = null;
@@ -141,6 +175,7 @@ export default function PDialog({
 
     if (!value.startsWith(renderedValue)) {
       setRenderedValue("");
+      setHasStartedTyping(false);
       return;
     }
 
@@ -149,9 +184,13 @@ export default function PDialog({
     }
 
     typingTimerRef.current = window.setTimeout(() => {
+      const nextChar = value.charAt(renderedValue.length);
       setRenderedValue(
         value.slice(0, Math.min(value.length, renderedValue.length + 1)),
       );
+      if (nextChar.trim()) {
+        setHasStartedTyping(true);
+      }
     }, typingIntervalMs);
 
     return () => {

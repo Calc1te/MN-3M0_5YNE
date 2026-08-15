@@ -70,6 +70,10 @@
   "setup": {
     "title": "Initial Setup",
     "language": "Choose language",
+    "eula": "End User License Agreement",
+    "eulaLoading": "Loading license agreement…",
+    "eulaLoadFailed": "The license agreement could not be loaded. Check the bundled resource and try again.",
+    "eulaConfirm": "Confirm",
     "barParent": ".bar parent directory",
     "chooseBarParent": "Choose",
     "baseDir": "Bartending directory",

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -57,6 +57,7 @@ export default function BartenderMain({
   const [toolStatus, setToolStatus] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isReplyComplete, setIsReplyComplete] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const historyRef = useRef(history);
   const isLoadingRef = useRef(isLoading);
@@ -66,8 +67,17 @@ export default function BartenderMain({
   const idleDeadlineRef = useRef<number | null>(null);
   const idleRunRef = useRef(false);
 
-  // Get the latest message from history or current reply
-  const displayedMessage = reply || (history.length > 0 && history[history.length - 1]?.role === "assistant" ? history[history.length - 1].content : "");
+  // While a response is streaming, only display the current reply. Falling back
+  // to history here would replay the previous answer before new text arrives.
+  const latestAssistantMessage =
+    history.length > 0 && history[history.length - 1]?.role === "assistant"
+      ? history[history.length - 1].content
+      : "";
+  const displayedMessage = isSpeaking ? reply : reply || latestAssistantMessage;
+
+  const handleDialogTypingComplete = useCallback(() => {
+    setIsSpeaking(false);
+  }, []);
 
   useEffect(() => {
     historyRef.current = history;
@@ -204,11 +214,13 @@ export default function BartenderMain({
       automatic: boolean;
     },
   ) => {
+    let waitForDialogTyping = false;
     const baseHistory = historyRef.current;
     clearIdleTimer();
     setIsLoading(true);
     isLoadingRef.current = true;
     setIsSpeaking(true);
+    setIsReplyComplete(false);
     setError(null);
     setToolStatus("");
     setReply("");
@@ -221,13 +233,13 @@ export default function BartenderMain({
       );
       const hasToolCalls = response.toolCalls.length > 0;
 
-      setReply(response.assistant);
-      setIsSpeaking(false);
       if (options.clearInputAfterReply) {
         setInput("");
       }
 
       if (hasToolCalls) {
+        setReply("");
+        setIsSpeaking(false);
         setToolStatus(
           t("ui.toolCalling") || "P is rummaging through the file pile...",
         );
@@ -245,6 +257,7 @@ export default function BartenderMain({
           { role: "assistant", content: JSON.stringify(response) },
         ];
         setReply("");
+        setIsReplyComplete(false);
         setIsSpeaking(true);
         const finalReply = await chatWithBartenderStream(
           buildToolResultPrompt(toolResults),
@@ -254,7 +267,8 @@ export default function BartenderMain({
 
         setToolStatus("");
         setReply(finalReply.assistant);
-        setIsSpeaking(false);
+        setIsReplyComplete(true);
+        waitForDialogTyping = true;
 
         const nextHistory = options.persistUserInput
           ? [
@@ -270,6 +284,10 @@ export default function BartenderMain({
         setHistory(nextHistory);
         return;
       }
+
+      setReply(response.assistant);
+      setIsReplyComplete(true);
+      waitForDialogTyping = true;
 
       const newHistory: ChatTurn[] = options.persistUserInput
         ? [
@@ -298,7 +316,9 @@ export default function BartenderMain({
       if (options.automatic) {
         idleRunRef.current = false;
       }
-      setIsSpeaking(false);
+      if (!waitForDialogTyping) {
+        setIsSpeaking(false);
+      }
       setIsLoading(false);
       isLoadingRef.current = false;
       resetIdleTimer();
@@ -365,6 +385,8 @@ export default function BartenderMain({
         value={displayedMessage}
         readOnly
         isSpeaking={isSpeaking}
+        isContentComplete={isReplyComplete}
+        onTypingComplete={handleDialogTypingComplete}
         typingSpeed={config.Dialog_Typing_Speed}
         font="normal"
         rows={6}
