@@ -12,6 +12,26 @@ const isMacOS =
 
 let currentIgnoreState: boolean | null = null;
 let recoveryIntervalId: number | null = null;
+const ghostModeListeners = new Set<(ignore: boolean | null) => void>();
+
+function notifyGhostModeListeners() {
+  for (const listener of ghostModeListeners) {
+    listener(currentIgnoreState);
+  }
+}
+
+export function getGhostModeIgnoreState(): boolean | null {
+  return currentIgnoreState;
+}
+
+export function onGhostModeChange(
+  listener: (ignore: boolean | null) => void,
+): () => void {
+  ghostModeListeners.add(listener);
+  return () => {
+    ghostModeListeners.delete(listener);
+  };
+}
 
 const setGhostMode = async (ignore: boolean) => {
   if (!isTauriApp) {
@@ -22,6 +42,7 @@ const setGhostMode = async (ignore: boolean) => {
     return;
   }
   currentIgnoreState = ignore;
+  notifyGhostModeListeners();
   await invoke("set_ghost_mode", { ignore });
 };
 

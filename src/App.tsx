@@ -29,6 +29,7 @@ import {
   type AppConfig,
 } from "@/lib/app-config";
 import { getUIFontClass, resolveAppLanguage } from "@/lib/language";
+import DebugMenu from "./components/debug.tsx";
 
 function PanelTransition({ children }: { children: ReactNode }) {
   return (
@@ -70,6 +71,7 @@ function AppRoutes({
           element={
             <PanelTransition>
               <main className="container" color="none">
+                <DebugMenu/>
                 <BartenderMain
                   showSetupCompletePrompt={showSetupCompletePrompt}
                   onSetupCompletePromptShown={onSetupCompletePromptShown}
