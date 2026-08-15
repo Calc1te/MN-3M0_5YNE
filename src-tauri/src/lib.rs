@@ -1277,8 +1277,10 @@ async fn check_lance_connection() -> Result<ConnectionStatusResponse, String> {
 }
 
 #[tauri::command]
-async fn set_ghost_mode(window: WebviewWindow, ignore: bool) {
-    let _ = window.set_ignore_cursor_events(ignore);
+fn set_ghost_mode(window: WebviewWindow, ignore: bool) -> Result<(), String> {
+    window
+        .set_ignore_cursor_events(ignore)
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]

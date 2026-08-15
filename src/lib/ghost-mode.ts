@@ -1,5 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
-import { cursorPosition, getCurrentWindow } from "@tauri-apps/api/window";
+import {
+  cursorPosition,
+  getCurrentWindow,
+  primaryMonitor,
+} from "@tauri-apps/api/window";
 
 export const GHOST_CLICK_REGION_SELECTOR = "[data-ghost-click-region='true']";
 
@@ -12,6 +16,8 @@ const isMacOS =
 
 let currentIgnoreState: boolean | null = null;
 let recoveryIntervalId: number | null = null;
+let recoveryPollInFlight = false;
+let ghostModeCommandQueue: Promise<void> = Promise.resolve();
 const ghostModeListeners = new Set<(ignore: boolean | null) => void>();
 
 function notifyGhostModeListeners() {
@@ -33,21 +39,35 @@ export function onGhostModeChange(
   };
 }
 
-const setGhostMode = async (ignore: boolean) => {
+const setGhostMode = (ignore: boolean): Promise<void> => {
   if (!isTauriApp) {
-    return;
+    return Promise.resolve();
   }
 
   if (currentIgnoreState === ignore) {
-    return;
+    return ghostModeCommandQueue;
   }
   currentIgnoreState = ignore;
   notifyGhostModeListeners();
-  await invoke("set_ghost_mode", { ignore });
+
+  // Keep native updates ordered. Mouse enter/leave and the recovery poll can
+  // otherwise issue opposite requests before macOS applies the first one.
+  ghostModeCommandQueue = ghostModeCommandQueue.then(async () => {
+    try {
+      await invoke("set_ghost_mode", { ignore });
+    } catch (error) {
+      if (currentIgnoreState === ignore) {
+        currentIgnoreState = null;
+        notifyGhostModeListeners();
+      }
+      console.warn("Failed to update click-through state:", error);
+    }
+  });
+
+  return ghostModeCommandQueue;
 };
 
 export const enableClick = () => {
-  stopGhostModeRecovery();
   void setGhostMode(false);
 };
 
@@ -60,14 +80,21 @@ async function isCursorOverClickableRegion(): Promise<boolean> {
     return false;
   }
 
-  const [cursor, outerPosition, scaleFactor] = await Promise.all([
+  const [cursor, outerPosition, windowScaleFactor, primary] = await Promise.all([
     cursorPosition(),
     appWindow.outerPosition(),
     appWindow.scaleFactor(),
+    primaryMonitor(),
   ]);
 
-  const localX = (cursor.x - outerPosition.x) / scaleFactor;
-  const localY = (cursor.y - outerPosition.y) / scaleFactor;
+  // tao reports the global cursor using the primary monitor scale factor on
+  // macOS, while a window position uses the window monitor scale factor.
+  // Convert both back to desktop logical coordinates before subtracting.
+  const cursorScaleFactor = primary?.scaleFactor ?? windowScaleFactor;
+  const localX =
+    cursor.x / cursorScaleFactor - outerPosition.x / windowScaleFactor;
+  const localY =
+    cursor.y / cursorScaleFactor - outerPosition.y / windowScaleFactor;
 
   if (
     localX < 0 ||
@@ -96,12 +123,20 @@ export const startGhostModeRecovery = () => {
   }
 
   const poll = () => {
+    if (recoveryPollInFlight) {
+      return;
+    }
+    recoveryPollInFlight = true;
+
     void Promise.all([isCursorOverClickableRegion(), isDevtoolsOpen()])
       .then(([isOverClickableRegion, devtoolsOpen]) =>
         setGhostMode(devtoolsOpen ? false : !isOverClickableRegion),
       )
       .catch(() => {
         // Ignore transient cursor query failures.
+      })
+      .finally(() => {
+        recoveryPollInFlight = false;
       });
   };
 

@@ -8,6 +8,7 @@ import {
   disableClick,
   enableClick,
   GHOST_CLICK_REGION_SELECTOR,
+  ghostModeRegionProps,
 } from "@/lib/ghost-mode";
 import { useRef, type PointerEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -63,9 +64,9 @@ export default function Menu({ children }: MenuProps) {
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent
+        {...ghostModeRegionProps}
         onPointerDown={rememberPointer}
         onPointerMove={rememberPointer}
-        onMouseEnter={enableClick}
       >
         <ContextMenuItem onSelect={handleSetting}>
           {t("menu.settings")}

@@ -119,41 +119,36 @@ function App() {
   const [showSetupCompletePrompt, setShowSetupCompletePrompt] = useState(false);
 
   useEffect(() => {
+    if (shouldUseGhostModeRecovery) {
+      // On macOS a click-through window cannot rely on DOM mouseenter events
+      // to make an interactive region clickable again.
+      startGhostModeRecovery();
+    }
+
     const handleWindowMouseEnter = () => {
-      stopGhostModeRecovery();
+      if (shouldUseGhostModeRecovery) {
+        return;
+      }
       disableClick();
     };
     const handleWindowDeactivation = () => {
-      if (shouldUseGhostModeRecovery) {
-        startGhostModeRecovery();
-        return;
+      if (!shouldUseGhostModeRecovery) {
+        enableClick();
       }
-      enableClick();
     };
     const handleVisibilityChange = () => {
-      if (document.hidden) {
-        if (shouldUseGhostModeRecovery) {
-          startGhostModeRecovery();
-          return;
-        }
+      if (document.hidden && !shouldUseGhostModeRecovery) {
         enableClick();
-        return;
       }
-      stopGhostModeRecovery();
-    };
-    const handleWindowFocus = () => {
-      stopGhostModeRecovery();
     };
 
     window.addEventListener("mouseenter", handleWindowMouseEnter);
     window.addEventListener("blur", handleWindowDeactivation);
-    window.addEventListener("focus", handleWindowFocus);
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
       stopGhostModeRecovery();
       window.removeEventListener("mouseenter", handleWindowMouseEnter);
       window.removeEventListener("blur", handleWindowDeactivation);
-      window.removeEventListener("focus", handleWindowFocus);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       enableClick();
     };
