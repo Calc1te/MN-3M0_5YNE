@@ -47,6 +47,7 @@ export interface memoryEntry {
 const CHAT_COMPLETIONS_SUFFIX = "/chat/completions";
 const DEFAULT_CONTEXT_CHAR_BUDGET = 48_000;
 const MESSAGE_OVERHEAD_CHARS = 24;
+export const MAX_BARTENDER_TOOL_ROUNDS = 4;
 
 let cachedSystemPrompt:
   | {
@@ -132,7 +133,8 @@ async function resolveLlmConfig(
 
 function getSystemPrompt(): string {
   const language = getCurrentLanguage();
-  return i18n.getFixedT(language)("prompts.system");
+  const t = i18n.getFixedT(language);
+  return `${t("prompts.system")}\n\n${t("prompts.toolWorkflow")}`;
 }
 
 interface StartupContext {
@@ -701,10 +703,16 @@ export function buildToolResultPrompt(toolResults: BartenderToolResult[]): strin
     }) as string[]
   ).join("\n");
   const baseListPresentationNote = t("prompts.baseListPresentationNote");
+  const successfulTools = toolResults
+    .filter(({ error }) => !error)
+    .map(({ call }) => call.tool);
 
   return [
     t("prompts.toolResultsFinished"),
     t("prompts.toolResultsReuseJson"),
+    t("prompts.toolResultsNextAction", {
+      tools: successfulTools.join(", ") || "none",
+    }),
     ...(hasBaseList ? [baseListGuidance] : []),
     JSON.stringify(
       toolResults.map(({ call, result, error }) => ({
@@ -724,32 +732,134 @@ export function buildToolResultPrompt(toolResults: BartenderToolResult[]): strin
   ].join("\n\n");
 }
 
+export function buildToolLoopLimitPrompt(): string {
+  const language = getCurrentLanguage();
+  return i18n.getFixedT(language)("prompts.toolLoopLimit");
+}
+
+function toolCallSignature(call: McpToolCall): string {
+  return `${call.tool}:${JSON.stringify(call.args)}`;
+}
+
+function splitToolCallsForRound(
+  calls: McpToolCall[],
+  completedSignatures: Set<string>,
+): {
+  pendingCalls: McpToolCall[];
+  filteredResults: BartenderToolResult[];
+} {
+  const pendingCalls: McpToolCall[] = [];
+  const filteredResults: BartenderToolResult[] = [];
+  const discoversBaseFiles = calls.some((call) => call.tool === "base_list");
+  const stagesDrink = calls.some((call) => call.tool === "mix_data_drink");
+
+  for (const call of calls) {
+    const waitsForBaseList =
+      discoversBaseFiles &&
+      (call.tool === "get_base" ||
+        call.tool === "mix_data_drink" ||
+        call.tool === "finalize_drink");
+    const waitsForDrinkId = stagesDrink && call.tool === "finalize_drink";
+    if (waitsForBaseList || waitsForDrinkId) {
+      filteredResults.push({
+        call,
+        error:
+          "Deferred premature tool call: wait for the prerequisite result, then call it with exact returned values in the next round.",
+      });
+      continue;
+    }
+
+    const signature = toolCallSignature(call);
+    if (call.tool !== "change_state" && completedSignatures.has(signature)) {
+      filteredResults.push({
+        call,
+        error: "Skipped duplicate tool call: reuse the successful result already present in this task.",
+      });
+      continue;
+    }
+    pendingCalls.push(call);
+  }
+
+  return { pendingCalls, filteredResults };
+}
+
+export function rememberSuccessfulToolCalls(
+  toolResults: BartenderToolResult[],
+  completedSignatures: Set<string>,
+): void {
+  for (const { call, error } of toolResults) {
+    if (!error && call.tool !== "change_state") {
+      completedSignatures.add(toolCallSignature(call));
+    }
+  }
+}
+
+export function filterToolCallsForRound(
+  calls: McpToolCall[],
+  completedSignatures: Set<string>,
+): {
+  pendingCalls: McpToolCall[];
+  filteredResults: BartenderToolResult[];
+} {
+  return splitToolCallsForRound(calls, completedSignatures);
+}
+
 export async function chatWithBartenderAndTools(
   userInput: string,
   history: ChatTurn[] = [],
   transport: McpTransport = createLocalMcpTransport(),
 ): Promise<BartenderConversationResult> {
   const initialReply = await chatWithBartender(userInput, history);
-  if (initialReply.toolCalls.length === 0) {
-    return {
-      initialReply,
-      finalReply: initialReply,
-      toolResults: [],
-    };
-  }
-
-  const toolResults = await runMcpToolCallsDetailed(initialReply.toolCalls, transport);
-  const followUpHistory: ChatTurn[] = [
+  let finalReply = initialReply;
+  let followUpHistory: ChatTurn[] = [
     ...history,
     { role: "user", content: userInput },
-    { role: "assistant", content: JSON.stringify(initialReply) },
   ];
-  const finalReply = await chatWithBartender(buildToolResultPrompt(toolResults), followUpHistory);
+  const allToolResults: BartenderToolResult[] = [];
+  const completedSignatures = new Set<string>();
+
+  for (
+    let round = 0;
+    finalReply.toolCalls.length > 0 && round < MAX_BARTENDER_TOOL_ROUNDS;
+    round += 1
+  ) {
+    followUpHistory = [
+      ...followUpHistory,
+      { role: "assistant", content: JSON.stringify(finalReply) },
+    ];
+    const { pendingCalls, filteredResults } = filterToolCallsForRound(
+      finalReply.toolCalls,
+      completedSignatures,
+    );
+    const roundResults = [
+      ...(pendingCalls.length > 0
+        ? await runMcpToolCallsDetailed(pendingCalls, transport)
+        : []),
+      ...filteredResults,
+    ];
+    rememberSuccessfulToolCalls(roundResults, completedSignatures);
+    allToolResults.push(...roundResults);
+
+    const resultPrompt = buildToolResultPrompt(roundResults);
+    finalReply = await chatWithBartender(resultPrompt, followUpHistory);
+    followUpHistory = [
+      ...followUpHistory,
+      { role: "user", content: resultPrompt },
+    ];
+  }
+
+  if (finalReply.toolCalls.length > 0) {
+    followUpHistory = [
+      ...followUpHistory,
+      { role: "assistant", content: JSON.stringify(finalReply) },
+    ];
+    finalReply = await chatWithBartender(buildToolLoopLimitPrompt(), followUpHistory);
+  }
 
   return {
     initialReply,
     finalReply,
-    toolResults,
+    toolResults: allToolResults,
   };
 }
 

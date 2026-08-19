@@ -4,6 +4,7 @@ import {
   getCurrentWindow,
 } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
+import { Check, ClipboardCopy } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -19,6 +20,7 @@ import {
   ghostModeRegionProps,
   onGhostModeChange,
 } from "@/lib/ghost-mode";
+import { getBartenderHistory } from "@/lib/bartender-history";
 import { getUIFontClass } from "@/lib/language";
 import {
   clearMcpCallHistory,
@@ -110,6 +112,34 @@ function formatJsonPreview(value: unknown): string {
   }
 }
 
+async function copyTextToClipboard(text: string): Promise<void> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+  } catch {
+    // Some desktop webviews expose Clipboard API but reject it without a secure context.
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  textarea.style.pointerEvents = "none";
+  document.body.appendChild(textarea);
+  textarea.select();
+
+  try {
+    if (!document.execCommand("copy")) {
+      throw new Error("Clipboard copy command was rejected");
+    }
+  } finally {
+    textarea.remove();
+  }
+}
+
 export default function DebugMenu() {
   const { t, i18n } = useTranslation();
   const language = i18n.resolvedLanguage ?? i18n.language;
@@ -143,6 +173,9 @@ export default function DebugMenu() {
   const [mcpCallHistory, setMcpCallHistory] = useState<McpCallHistoryEntry[]>(
     () => getMcpCallHistory(),
   );
+  const [conversationCopyState, setConversationCopyState] = useState<
+    "idle" | "copied" | "error"
+  >("idle");
 
   useEffect(() => onBartenderStateChange(setState), []);
   useEffect(() => onIdleTriggerStateChange(setIdleTrigger), []);
@@ -245,6 +278,17 @@ export default function DebugMenu() {
     setState(changeBartenderState(value));
   };
 
+  const handleCopyConversation = async () => {
+    try {
+      const conversation = JSON.stringify(getBartenderHistory(), null, 2);
+      await copyTextToClipboard(conversation);
+      setConversationCopyState("copied");
+    } catch (error) {
+      console.warn("Failed to copy conversation history:", error);
+      setConversationCopyState("error");
+    }
+  };
+
   const countdownText = idleTrigger.running
     ? t("ui.debugIdleCountdownRunning")
     : !idleTrigger.enabled
@@ -319,6 +363,32 @@ export default function DebugMenu() {
           </div>
           <div className="border border-border rounded px-3 py-2 text-sm">
             {countdownText}
+          </div>
+        </section>
+        <section className="flex w-full max-w-md flex-col gap-2">
+          <div className="text-sm font-medium">
+            {t("ui.debugConversation") || "Conversation"}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              className="inline-flex items-center gap-2 rounded border border-border px-3 py-2 text-xs text-muted-foreground hover:text-foreground"
+              onClick={() => void handleCopyConversation()}
+              type="button"
+            >
+              {conversationCopyState === "copied" ? (
+                <Check aria-hidden="true" className="size-3.5" />
+              ) : (
+                <ClipboardCopy aria-hidden="true" className="size-3.5" />
+              )}
+              {conversationCopyState === "copied"
+                ? t("ui.debugConversationCopied") || "Copied"
+                : t("ui.debugConversationCopy") || "Copy conversation"}
+            </button>
+            {conversationCopyState === "error" && (
+              <span className="text-xs text-destructive" role="status">
+                {t("ui.debugConversationCopyError") || "Copy failed"}
+              </span>
+            )}
           </div>
         </section>
         <section className="flex w-full flex-col gap-2">

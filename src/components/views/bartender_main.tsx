@@ -2,9 +2,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
+  MAX_BARTENDER_TOOL_ROUNDS,
+  buildToolLoopLimitPrompt,
   buildToolResultPrompt,
   chatWithBartenderStream,
   createLocalMcpTransport,
+  filterToolCallsForRound,
+  rememberSuccessfulToolCalls,
   runMcpToolCallsDetailed,
   type BartenderToolResult,
   type ChatTurn,
@@ -236,7 +240,7 @@ export default function BartenderMain({
     setReply("");
 
     try {
-      const response = await chatWithBartenderStream(
+      let response = await chatWithBartenderStream(
         prompt,
         baseHistory,
         setReply,
@@ -260,36 +264,75 @@ export default function BartenderMain({
           retainedToolReplyTimeoutRef.current = null;
         }, 30_000);
 
-        const toolResults = await runMcpToolCallsDetailed(
-          response.toolCalls,
-          createLocalMcpTransport(),
-        );
-        applyToolStateChanges(toolResults);
-
-        const followUpHistory: ChatTurn[] = [
+        let followUpHistory: ChatTurn[] = [
           ...baseHistory,
-          ...(options.persistUserInput
-            ? [{ role: "user" as const, content: prompt }]
-            : []),
-          { role: "assistant", content: JSON.stringify(response) },
+          { role: "user", content: prompt },
         ];
-        setIsReplyComplete(false);
-        setIsSpeaking(true);
-        const finalReply = await chatWithBartenderStream(
-          buildToolResultPrompt(toolResults),
-          followUpHistory,
-          (text) => {
-            if (!text.trim()) {
-              return;
-            }
-            clearRetainedToolReplyTimeout();
-            setReply(text);
-          },
-        );
+        const completedToolSignatures = new Set<string>();
+        const transport = createLocalMcpTransport();
+
+        for (
+          let round = 0;
+          response.toolCalls.length > 0 && round < MAX_BARTENDER_TOOL_ROUNDS;
+          round += 1
+        ) {
+          followUpHistory = [
+            ...followUpHistory,
+            { role: "assistant", content: JSON.stringify(response) },
+          ];
+          const { pendingCalls, filteredResults } = filterToolCallsForRound(
+            response.toolCalls,
+            completedToolSignatures,
+          );
+          const toolResults = [
+            ...(pendingCalls.length > 0
+              ? await runMcpToolCallsDetailed(pendingCalls, transport)
+              : []),
+            ...filteredResults,
+          ];
+          rememberSuccessfulToolCalls(toolResults, completedToolSignatures);
+          applyToolStateChanges(toolResults);
+
+          const resultPrompt = buildToolResultPrompt(toolResults);
+          setIsReplyComplete(false);
+          setIsSpeaking(true);
+          response = await chatWithBartenderStream(
+            resultPrompt,
+            followUpHistory,
+            (text) => {
+              if (!text.trim()) {
+                return;
+              }
+              clearRetainedToolReplyTimeout();
+              setReply(text);
+            },
+          );
+          followUpHistory = [
+            ...followUpHistory,
+            { role: "user", content: resultPrompt },
+          ];
+        }
+
+        if (response.toolCalls.length > 0) {
+          followUpHistory = [
+            ...followUpHistory,
+            { role: "assistant", content: JSON.stringify(response) },
+          ];
+          response = await chatWithBartenderStream(
+            buildToolLoopLimitPrompt(),
+            followUpHistory,
+            (text) => {
+              if (text.trim()) {
+                clearRetainedToolReplyTimeout();
+                setReply(text);
+              }
+            },
+          );
+        }
 
         clearRetainedToolReplyTimeout();
         setToolStatus("");
-        setReply(finalReply.assistant);
+        setReply(response.assistant);
         setIsReplyComplete(true);
         waitForDialogTyping = true;
 
@@ -297,11 +340,11 @@ export default function BartenderMain({
           ? [
               ...baseHistory,
               { role: "user" as const, content: prompt },
-              { role: "assistant" as const, content: finalReply.assistant },
+              { role: "assistant" as const, content: response.assistant },
             ]
           : [
               ...baseHistory,
-              { role: "assistant" as const, content: finalReply.assistant },
+              { role: "assistant" as const, content: response.assistant },
             ];
         setBartenderHistory(nextHistory);
         setHistory(nextHistory);
@@ -359,11 +402,14 @@ export default function BartenderMain({
       running: true,
       remainingMs: 0,
     });
-    await runConversation(t("prompts.idle_trigger"), {
-      persistUserInput: false,
-      clearInputAfterReply: false,
-      automatic: true,
-    });
+    await runConversation(
+      `${t("prompts.idle_trigger")}\n\n${t("prompts.idleWorkflow")}`,
+      {
+        persistUserInput: false,
+        clearInputAfterReply: false,
+        automatic: true,
+      },
+    );
   };
 
   const handleSendMessage = async () => {
