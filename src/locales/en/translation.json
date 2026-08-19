@@ -45,6 +45,7 @@
     "rememberOnExit": "Let P clean up and remember this session on exit",
     "launchOnStartup": "Launch on startup",
     "alwaysOnTop": "Keep window always on top",
+    "developerMode": "Developer mode",
     "idleAutoMixMinutes": "Idle auto-mix delay",
     "dialogTypingSpeed": "Dialog typing speed",
     "dialogTypingSpeedSlow": "Slow",

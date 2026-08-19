@@ -12,7 +12,6 @@ import "./App.css";
 import Menu from "./components/views/menu.tsx";
 import About from "./components/views/settings/about.tsx";
 import BartenderMain from "./components/views/bartender_main.tsx";
-// import DebugMenu from "./components/debug.tsx";
 import InitialSetup from "./components/views/initial_setup.tsx";
 import SettingsPanel from "./components/views/settings/panel.tsx";
 import {
@@ -25,6 +24,7 @@ import {
 } from "@/lib/ghost-mode";
 import {
   getInitialSetupStatus,
+  onAppConfigChange,
   simulateFirstInstall,
   type AppConfig,
 } from "@/lib/app-config";
@@ -56,9 +56,11 @@ function SolidClickSurface({ children }: { children: ReactNode }) {
 function AppRoutes({
   showSetupCompletePrompt,
   onSetupCompletePromptShown,
+  developerMode,
 }: {
   showSetupCompletePrompt: boolean;
   onSetupCompletePromptShown: () => void;
+  developerMode: boolean;
 }) {
   const location = useLocation();
 
@@ -71,12 +73,11 @@ function AppRoutes({
           element={
             <PanelTransition>
               <main className="container" color="none">
-                <DebugMenu/>
+                {developerMode && <DebugMenu />}
                 <BartenderMain
                   showSetupCompletePrompt={showSetupCompletePrompt}
                   onSetupCompletePromptShown={onSetupCompletePromptShown}
                 />
-                {/* <DebugMenu /> */}
               </main>
             </PanelTransition>
           }
@@ -165,6 +166,12 @@ function App() {
   }, [resolvedLanguage, uiFontClass]);
 
   useEffect(() => {
+    return onAppConfigChange((config) => {
+      setSetupState((current) => ({ ...current, config }));
+    });
+  }, []);
+
+  useEffect(() => {
     void getInitialSetupStatus()
       .then((status) => {
         setSetupState({
@@ -204,6 +211,7 @@ function App() {
         <Menu>
           <div className="min-h-screen w-full">
             <AppRoutes
+              developerMode={setupState.config?.Developer_Mode ?? false}
               showSetupCompletePrompt={showSetupCompletePrompt}
               onSetupCompletePromptShown={() =>
                 setShowSetupCompletePrompt(false)

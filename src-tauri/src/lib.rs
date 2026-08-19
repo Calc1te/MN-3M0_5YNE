@@ -227,6 +227,8 @@ struct BarConfig {
     remember_on_exit: bool,
     #[serde(rename = "Always_On_Top", default)]
     always_on_top: bool,
+    #[serde(rename = "Developer_Mode", default)]
+    developer_mode: bool,
     #[serde(
         rename = "Idle_Auto_Mix_Minutes",
         default = "default_idle_auto_mix_minutes"
@@ -278,6 +280,7 @@ impl Default for BarConfig {
             setup_completed: false,
             remember_on_exit: false,
             always_on_top: false,
+            developer_mode: false,
             idle_auto_mix_minutes: default_idle_auto_mix_minutes(),
             dialog_typing_speed: default_dialog_typing_speed(),
             audio_volume_bgm: default_bgm_volume(),

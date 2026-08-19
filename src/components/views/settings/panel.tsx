@@ -454,6 +454,20 @@ export default function SettingsPanel() {
         </section>
 
         <section className="flex w-full max-w-xl flex-col gap-3">
+          <label className="flex items-center gap-3 text-sm">
+            <Checkbox
+              checked={config.Developer_Mode}
+              onCheckedChange={(checked) =>
+                updateConfig({ Developer_Mode: checked === true })
+              }
+              disabled={isExiting}
+              font="normal"
+            />
+            <span>{t("ui.developerMode")}</span>
+          </label>
+        </section>
+
+        <section className="flex w-full max-w-xl flex-col gap-3">
           <div className="flex items-center justify-between text-sm">
             <span>{t("ui.idleAutoMixMinutes")}</span>
             <span className="text-xs text-white/70">

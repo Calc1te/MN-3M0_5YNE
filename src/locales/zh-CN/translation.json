@@ -45,6 +45,7 @@
     "rememberOnExit": "退出时让 P 打扫酒吧并记住这次会话",
     "launchOnStartup": "开机时自动启动",
     "alwaysOnTop": "窗口始终置顶",
+    "developerMode": "开发者模式",
     "idleAutoMixMinutes": "挂机后自动调酒等待时间",
     "dialogTypingSpeed": "文字播放速度",
     "dialogTypingSpeedSlow": "慢",

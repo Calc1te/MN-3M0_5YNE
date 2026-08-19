@@ -17,6 +17,7 @@ export interface AppConfig {
   Setup_Completed: boolean;
   Remember_On_Exit: boolean;
   Always_On_Top: boolean;
+  Developer_Mode: boolean;
   Idle_Auto_Mix_Minutes: number;
   Dialog_Typing_Speed: DialogTypingSpeed;
   Audio_Volume_BGM: number;
@@ -40,6 +41,23 @@ export const isFriendMode = import.meta.env.VITE_FRIEND_MODE === "true";
 export const simulateFirstInstall =
   import.meta.env.DEV && import.meta.env.VITE_SIMULATE_FIRST_INSTALL === "true";
 
+const appConfigListeners = new Set<(config: AppConfig) => void>();
+
+function emitAppConfigChange(config: AppConfig): void {
+  for (const listener of appConfigListeners) {
+    listener(config);
+  }
+}
+
+export function onAppConfigChange(
+  listener: (config: AppConfig) => void,
+): () => void {
+  appConfigListeners.add(listener);
+  return () => {
+    appConfigListeners.delete(listener);
+  };
+}
+
 export function buildDefaultAppConfig(): AppConfig {
   return {
     Name: "User",
@@ -54,6 +72,7 @@ export function buildDefaultAppConfig(): AppConfig {
     Setup_Completed: false,
     Remember_On_Exit: false,
     Always_On_Top: false,
+    Developer_Mode: false,
     Idle_Auto_Mix_Minutes: 10,
     Dialog_Typing_Speed: DEFAULT_DIALOG_TYPING_SPEED,
     Audio_Volume_BGM: 0.5,
@@ -66,13 +85,17 @@ export async function getAppConfig(): Promise<AppConfig> {
 }
 
 export async function saveAppConfig(config: AppConfig): Promise<AppConfig> {
-  return invoke<AppConfig>("save_app_config", { config });
+  const saved = await invoke<AppConfig>("save_app_config", { config });
+  emitAppConfigChange(saved);
+  return saved;
 }
 
 export async function completeInitialSetup(
   config: AppConfig,
 ): Promise<AppConfig> {
-  return invoke<AppConfig>("complete_initial_setup", { config });
+  const saved = await invoke<AppConfig>("complete_initial_setup", { config });
+  emitAppConfigChange(saved);
+  return saved;
 }
 
 export async function getInitialSetupStatus(): Promise<InitialSetupStatus> {
