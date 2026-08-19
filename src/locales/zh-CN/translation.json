@@ -60,6 +60,8 @@
     "tauriLogoAlt": "Tauri 图标",
     "about": "关于",
     "debug": "调试",
+    "debugLlmActive": "LLM 请求中",
+    "debugLlmIdle": "LLM 空闲",
     "debugState": "P 的状态",
     "debugStatePlaceholder": "选择状态",
     "debugScreenResolution": "所在屏幕",

@@ -60,6 +60,8 @@
     "tauriLogoAlt": "Tauri ロゴ",
     "about": "このアプリについて",
     "debug": "デバッグ",
+    "debugLlmActive": "LLM リクエスト中",
+    "debugLlmIdle": "LLM 待機中",
     "debugState": "P の状態",
     "debugStatePlaceholder": "状態を選択",
     "debugScreenResolution": "現在の画面",

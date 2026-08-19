@@ -1,10 +1,14 @@
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import {
+  cursorPosition,
+  getCurrentWindow,
+  primaryMonitor,
+} from "@tauri-apps/api/window";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import PSprite from "@/components/P_sprite";
-import { ghostModeRegionProps } from "@/lib/ghost-mode";
+import { enableClick, ghostModeRegionProps } from "@/lib/ghost-mode";
 import { getChatFontClass } from "@/lib/language";
 import { cn } from "@/lib/utils";
 
@@ -26,6 +30,8 @@ export default function PFileDropTarget({
   const disabledRef = useRef(disabled);
   const onFilesDroppedRef = useRef(onFilesDropped);
   const isFileOverPRef = useRef(false);
+  const dragPathsRef = useRef<string[]>([]);
+  const dragSessionRef = useRef(0);
   const [isFileDragActive, setIsFileDragActive] = useState(false);
   const [isFileOverP, setIsFileOverP] = useState(false);
 
@@ -43,20 +49,35 @@ export default function PFileDropTarget({
     const appWindow = getCurrentWindow();
     const appWebview = getCurrentWebview();
 
-    const isOverTarget = (physicalX: number, physicalY: number) => {
+    const containsLogicalPoint = (x: number, y: number) => {
       const target = targetRef.current;
       if (!target) {
         return false;
       }
 
       const rect = target.getBoundingClientRect();
-      const logicalX = physicalX / scaleFactor;
-      const logicalY = physicalY / scaleFactor;
       return (
-        logicalX >= rect.left &&
-        logicalX <= rect.right &&
-        logicalY >= rect.top &&
-        logicalY <= rect.bottom
+        x >= rect.left &&
+        x <= rect.right &&
+        y >= rect.top &&
+        y <= rect.bottom
+      );
+    };
+
+    const isOverTarget = (physicalX: number, physicalY: number) =>
+      containsLogicalPoint(physicalX / scaleFactor, physicalY / scaleFactor) ||
+      containsLogicalPoint(physicalX, physicalY);
+
+    const isCursorOverTarget = async () => {
+      const [cursor, windowPosition, primary] = await Promise.all([
+        cursorPosition(),
+        appWindow.outerPosition(),
+        primaryMonitor(),
+      ]);
+      const cursorScaleFactor = primary?.scaleFactor ?? scaleFactor;
+      return containsLogicalPoint(
+        cursor.x / cursorScaleFactor - windowPosition.x / scaleFactor,
+        cursor.y / cursorScaleFactor - windowPosition.y / scaleFactor,
       );
     };
 
@@ -67,31 +88,91 @@ export default function PFileDropTarget({
     });
 
     void appWebview
-      .onDragDropEvent(({ payload }) => {
+      .onDragDropEvent(async ({ payload }) => {
         if (disposed) {
           return;
         }
 
         if (payload.type === "leave") {
+          const session = dragSessionRef.current;
+          const wasOverP = isFileOverPRef.current;
           isFileOverPRef.current = false;
           setIsFileDragActive(false);
           setIsFileOverP(false);
+
+          window.setTimeout(() => {
+            const paths = dragPathsRef.current;
+            if (
+              disposed ||
+              session !== dragSessionRef.current ||
+              !wasOverP ||
+              paths.length === 0
+            ) {
+              return;
+            }
+
+            void isCursorOverTarget()
+              .then((droppedOnP) => {
+                console.debug("[file-drop] leave fallback", {
+                  pathCount: paths.length,
+                  droppedOnP,
+                  disabled: disabledRef.current,
+                });
+                if (
+                  !disposed &&
+                  droppedOnP &&
+                  !disabledRef.current &&
+                  session === dragSessionRef.current
+                ) {
+                  dragPathsRef.current = [];
+                  void onFilesDroppedRef.current(paths);
+                }
+              })
+              .catch((error: unknown) => {
+                console.warn("Failed to verify file drop leave position:", error);
+              });
+          }, 80);
           return;
         }
 
         const overTarget = isOverTarget(payload.position.x, payload.position.y);
         if (payload.type === "enter" || payload.type === "over") {
+          enableClick();
+          if (payload.type === "enter") {
+            dragSessionRef.current += 1;
+            dragPathsRef.current = payload.paths;
+            console.debug("[file-drop] enter", {
+              pathCount: payload.paths.length,
+              overTarget,
+            });
+          }
           isFileOverPRef.current = overTarget;
           setIsFileDragActive(true);
           setIsFileOverP(overTarget);
           return;
         }
 
-        const droppedOnP = overTarget || isFileOverPRef.current;
+        const wasOverP = isFileOverPRef.current;
+        dragPathsRef.current = [];
         isFileOverPRef.current = false;
         setIsFileDragActive(false);
         setIsFileOverP(false);
-        if (droppedOnP && !disabledRef.current) {
+
+        let droppedOnP = overTarget || wasOverP;
+        if (!droppedOnP) {
+          try {
+            droppedOnP = await isCursorOverTarget();
+          } catch (error) {
+            console.warn("Failed to verify file drop position:", error);
+          }
+        }
+
+        console.debug("[file-drop] received", {
+          pathCount: payload.paths.length,
+          droppedOnP,
+          disabled: disabledRef.current,
+        });
+        if (!disposed && droppedOnP && !disabledRef.current) {
           void onFilesDroppedRef.current(payload.paths);
         }
       })

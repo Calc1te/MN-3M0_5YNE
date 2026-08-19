@@ -23,6 +23,10 @@ import {
 import { getBartenderHistory } from "@/lib/bartender-history";
 import { getUIFontClass } from "@/lib/language";
 import {
+  getActiveLlmRequestCount,
+  onLlmRequestStateChange,
+} from "@/lib/llm-request-state";
+import {
   clearMcpCallHistory,
   getMcpCallHistory,
   onMcpCallHistoryChange,
@@ -173,6 +177,9 @@ export default function DebugMenu() {
   const [mcpCallHistory, setMcpCallHistory] = useState<McpCallHistoryEntry[]>(
     () => getMcpCallHistory(),
   );
+  const [activeLlmRequestCount, setActiveLlmRequestCount] = useState(() =>
+    getActiveLlmRequestCount(),
+  );
   const [conversationCopyState, setConversationCopyState] = useState<
     "idle" | "copied" | "error"
   >("idle");
@@ -180,6 +187,7 @@ export default function DebugMenu() {
   useEffect(() => onBartenderStateChange(setState), []);
   useEffect(() => onIdleTriggerStateChange(setIdleTrigger), []);
   useEffect(() => onMcpCallHistoryChange(setMcpCallHistory), []);
+  useEffect(() => onLlmRequestStateChange(setActiveLlmRequestCount), []);
   useEffect(
     () =>
       onGhostModeChange((ignore) => {
@@ -305,7 +313,29 @@ export default function DebugMenu() {
       )}
     >
       <summary className="cursor-pointer select-none font-semibold">
-        {t("ui.debug") || "Debug"}
+        <span className="inline-flex items-center gap-2">
+          <span>{t("ui.debug") || "Debug"}</span>
+          <span
+            className={cn(
+              "inline-flex items-center gap-1 text-xs font-normal",
+              activeLlmRequestCount > 0
+                ? "text-emerald-400"
+                : "text-muted-foreground",
+            )}
+          >
+            <span
+              aria-hidden="true"
+              className={cn(
+                "size-2 rounded-full bg-muted-foreground",
+                activeLlmRequestCount > 0 &&
+                  "animate-pulse bg-emerald-400",
+              )}
+            />
+            {activeLlmRequestCount > 0
+              ? t("ui.debugLlmActive") || "LLM active"
+              : t("ui.debugLlmIdle") || "LLM idle"}
+          </span>
+        </span>
       </summary>
       <div className="mt-4 flex flex-col gap-4">
         <section className="grid w-full max-w-md grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">

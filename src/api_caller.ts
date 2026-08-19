@@ -14,6 +14,7 @@ import {
   recordMcpCallFinish,
   recordMcpCallStart,
 } from "@/lib/mcp-call-history";
+import { beginLlmRequest, trackLlmRequest } from "@/lib/llm-request-state";
 
 export type Role = "user" | "assistant" | "system";
 
@@ -379,7 +380,9 @@ export async function chatWithBartender(
     messages: await toChatMessages(history, userInput),
   };
 
-  const completion = await openai.chat.completions.create(request, { signal });
+  const completion = await trackLlmRequest(() =>
+    openai.chat.completions.create(request, { signal }),
+  );
 
   const content = completion.choices[0]?.message?.content;
   if (!content) {
@@ -412,30 +415,35 @@ export async function chatWithBartenderStream(
   }
 
   const openai = createOpenAiClient(apiKey, config.chatBaseUrl);
-  const stream = await openai.chat.completions.create(
-    {
-      model,
-      temperature: 0.7,
-      messages: await toChatMessages(history, userInput),
-      stream: true,
-    },
-    { signal },
-  );
-
   let raw = "";
   let lastAssistantText = "";
-  for await (const part of stream) {
-    const content = part.choices[0]?.delta?.content ?? "";
-    if (!content) {
-      continue;
-    }
+  const finishLlmRequest = beginLlmRequest();
+  try {
+    const stream = await openai.chat.completions.create(
+      {
+        model,
+        temperature: 0.7,
+        messages: await toChatMessages(history, userInput),
+        stream: true,
+      },
+      { signal },
+    );
 
-    raw += content;
-    const nextAssistantText = extractAssistantPreview(raw);
-    if (nextAssistantText && nextAssistantText !== lastAssistantText) {
-      lastAssistantText = nextAssistantText;
-      onAssistantText?.(nextAssistantText);
+    for await (const part of stream) {
+      const content = part.choices[0]?.delta?.content ?? "";
+      if (!content) {
+        continue;
+      }
+
+      raw += content;
+      const nextAssistantText = extractAssistantPreview(raw);
+      if (nextAssistantText && nextAssistantText !== lastAssistantText) {
+        lastAssistantText = nextAssistantText;
+        onAssistantText?.(nextAssistantText);
+      }
     }
+  } finally {
+    finishLlmRequest();
   }
 
   if (!raw.trim()) {
@@ -521,26 +529,28 @@ export async function summarizeExitMemory(context: {
   const t = i18n.getFixedT(language);
   const history = (context.history ?? []);
   const openai = createOpenAiClient(config.apiKey, config.chatBaseUrl);
-  const completion = await openai.chat.completions.create({
-    model: config.chatModel,
-    temperature: 0.4,
-    messages: [
-      {
-        role: "system",
-        content: t("prompts.exitMemorySystem"),
-      },
-      {
-        role: "user",
-        content: JSON.stringify({
-          language: context.language,
-          baseDir: context.baseDir,
-          barRootParent: context.barRootParent,
-          exitedAt: new Date().toISOString(),
-          recentConversation: history,
-        }),
-      },
-    ],
-  });
+  const completion = await trackLlmRequest(() =>
+    openai.chat.completions.create({
+      model: config.chatModel,
+      temperature: 0.4,
+      messages: [
+        {
+          role: "system",
+          content: t("prompts.exitMemorySystem"),
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            language: context.language,
+            baseDir: context.baseDir,
+            barRootParent: context.barRootParent,
+            exitedAt: new Date().toISOString(),
+            recentConversation: history,
+          }),
+        },
+      ],
+    }),
+  );
 
   const content = completion.choices[0]?.message?.content?.trim();
   if (!content) {
@@ -591,12 +601,14 @@ export async function checkChatModelConnection(
   }
 
   const openai = createOpenAiClient(apiKey, config.chatBaseUrl);
-  const completion = await openai.chat.completions.create({
-    model: config.chatModel,
-    temperature: 0,
-    max_tokens: 1,
-    messages: [{ role: "user", content: "ping" }],
-  });
+  const completion = await trackLlmRequest(() =>
+    openai.chat.completions.create({
+      model: config.chatModel,
+      temperature: 0,
+      max_tokens: 1,
+      messages: [{ role: "user", content: "ping" }],
+    }),
+  );
 
   const content = completion.choices[0]?.message?.content;
   if (!content) {

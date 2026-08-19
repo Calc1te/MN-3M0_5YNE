@@ -58,6 +58,8 @@
     "exitMemorySaving": "P is cleaning the bar...",
     "about": "This is about page",
     "debug": "Debug",
+    "debugLlmActive": "LLM active",
+    "debugLlmIdle": "LLM idle",
     "debugState": "Bartender state",
     "debugStatePlaceholder": "Select state",
     "debugScreenResolution": "Current screen",
