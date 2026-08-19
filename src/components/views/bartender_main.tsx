@@ -66,6 +66,7 @@ export default function BartenderMain({
   const idleCountdownRef = useRef<number | null>(null);
   const idleDeadlineRef = useRef<number | null>(null);
   const idleRunRef = useRef(false);
+  const retainedToolReplyTimeoutRef = useRef<number | null>(null);
 
   // While a response is streaming, only display the current reply. Falling back
   // to history here would replay the previous answer before new text arrives.
@@ -78,6 +79,13 @@ export default function BartenderMain({
   const handleDialogTypingComplete = useCallback(() => {
     setIsSpeaking(false);
   }, []);
+
+  const clearRetainedToolReplyTimeout = () => {
+    if (retainedToolReplyTimeoutRef.current !== null) {
+      window.clearTimeout(retainedToolReplyTimeoutRef.current);
+      retainedToolReplyTimeoutRef.current = null;
+    }
+  };
 
   useEffect(() => {
     historyRef.current = history;
@@ -106,6 +114,7 @@ export default function BartenderMain({
       return;
     }
 
+    clearRetainedToolReplyTimeout();
     setReply(t("prompts.setup_complete"));
     setToolStatus("");
     setError(null);
@@ -217,6 +226,7 @@ export default function BartenderMain({
     let waitForDialogTyping = false;
     const baseHistory = historyRef.current;
     clearIdleTimer();
+    clearRetainedToolReplyTimeout();
     setIsLoading(true);
     isLoadingRef.current = true;
     setIsSpeaking(true);
@@ -238,11 +248,18 @@ export default function BartenderMain({
       }
 
       if (hasToolCalls) {
-        setReply("");
-        setIsSpeaking(false);
+        setReply(response.assistant);
+        setIsReplyComplete(true);
         setToolStatus(
           t("ui.toolCalling") || "P is rummaging through the file pile...",
         );
+        retainedToolReplyTimeoutRef.current = window.setTimeout(() => {
+          setReply((currentReply) =>
+            currentReply === response.assistant ? "" : currentReply,
+          );
+          retainedToolReplyTimeoutRef.current = null;
+        }, 30_000);
+
         const toolResults = await runMcpToolCallsDetailed(
           response.toolCalls,
           createLocalMcpTransport(),
@@ -256,15 +273,21 @@ export default function BartenderMain({
             : []),
           { role: "assistant", content: JSON.stringify(response) },
         ];
-        setReply("");
         setIsReplyComplete(false);
         setIsSpeaking(true);
         const finalReply = await chatWithBartenderStream(
           buildToolResultPrompt(toolResults),
           followUpHistory,
-          setReply,
+          (text) => {
+            if (!text.trim()) {
+              return;
+            }
+            clearRetainedToolReplyTimeout();
+            setReply(text);
+          },
         );
 
+        clearRetainedToolReplyTimeout();
         setToolStatus("");
         setReply(finalReply.assistant);
         setIsReplyComplete(true);
@@ -366,6 +389,7 @@ export default function BartenderMain({
     window.addEventListener("focus", markActivity);
 
     return () => {
+      clearRetainedToolReplyTimeout();
       clearIdleTimer();
       window.removeEventListener("pointerdown", markActivity);
       window.removeEventListener("keydown", markActivity);

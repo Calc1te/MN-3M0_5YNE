@@ -108,6 +108,14 @@ struct FinalizeDrinkResponse {
     affected_paths: Vec<String>,
 }
 
+#[derive(Serialize)]
+struct DebugStagedDrink {
+    drink_id: String,
+    staged_dir: String,
+    staged_files: Vec<StagedFileRecord>,
+    modified_unix_secs: Option<u64>,
+}
+
 #[derive(Deserialize)]
 struct DeleteRequest {
     path: String,
@@ -651,6 +659,50 @@ fn read_manifest(drink_id: &str) -> Result<(PathBuf, DrinkManifest), String> {
     let manifest: DrinkManifest = serde_json::from_slice(&bytes)
         .map_err(|e| format!("Failed to parse {}: {e}", manifest_path.display()))?;
     Ok((session_dir, manifest))
+}
+
+fn read_debug_staged_drinks() -> Result<Vec<DebugStagedDrink>, String> {
+    let shaker = shaker_root_dir()?;
+    let entries = fs::read_dir(&shaker)
+        .map_err(|e| format!("Failed to read shaker directory {}: {e}", shaker.display()))?;
+    let mut drinks = Vec::new();
+
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("Failed to read shaker entry: {e}"))?;
+        let session_dir = entry.path();
+        if !entry
+            .metadata()
+            .map_err(|e| format!("Failed to read metadata for {}: {e}", session_dir.display()))?
+            .is_dir()
+        {
+            continue;
+        }
+
+        let manifest_path = session_dir.join("manifest.json");
+        if !manifest_path.exists() {
+            continue;
+        }
+
+        let bytes = fs::read(&manifest_path)
+            .map_err(|e| format!("Failed to read {}: {e}", manifest_path.display()))?;
+        let manifest: DrinkManifest = serde_json::from_slice(&bytes)
+            .map_err(|e| format!("Failed to parse {}: {e}", manifest_path.display()))?;
+        let modified_unix_secs = fs::metadata(&manifest_path)
+            .ok()
+            .and_then(|metadata| metadata.modified().ok())
+            .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+            .map(|duration| duration.as_secs());
+
+        drinks.push(DebugStagedDrink {
+            drink_id: manifest.drink_id,
+            staged_dir: session_dir.to_string_lossy().into_owned(),
+            staged_files: manifest.staged_files,
+            modified_unix_secs,
+        });
+    }
+
+    drinks.sort_by(|a, b| b.modified_unix_secs.cmp(&a.modified_unix_secs));
+    Ok(drinks)
 }
 
 fn trim_to_chars(input: String, max_chars: usize) -> String {
@@ -1242,6 +1294,11 @@ fn finalize_drink(drink_id: String, action: String) -> Result<FinalizeDrinkRespo
 }
 
 #[tauri::command]
+fn debug_staged_drinks() -> Result<Vec<DebugStagedDrink>, String> {
+    read_debug_staged_drinks()
+}
+
+#[tauri::command]
 fn permanently_delete_base(path: String) -> Result<DeleteResponse, String> {
     permanently_delete(&path)?;
     Ok(DeleteResponse { deleted: path })
@@ -1499,6 +1556,7 @@ pub fn run() {
             get_base,
             mix_data_drink,
             finalize_drink,
+            debug_staged_drinks,
             permanently_delete_base,
             change_base_directory,
             change_bar_root_parent,

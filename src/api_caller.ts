@@ -10,6 +10,10 @@ import {
   getRuntimeLlmConfig,
   type RuntimeLlmConfig,
 } from "@/lib/app-config";
+import {
+  recordMcpCallFinish,
+  recordMcpCallStart,
+} from "@/lib/mcp-call-history";
 
 export type Role = "user" | "assistant" | "system";
 
@@ -41,6 +45,15 @@ export interface memoryEntry {
 }
 
 const CHAT_COMPLETIONS_SUFFIX = "/chat/completions";
+const DEFAULT_CONTEXT_CHAR_BUDGET = 48_000;
+const MESSAGE_OVERHEAD_CHARS = 24;
+
+let cachedSystemPrompt:
+  | {
+      language: string;
+      content: string;
+    }
+  | null = null;
 
 function normalizeChatCompletionsBaseUrl(baseUrl?: string): string | undefined {
   if (!baseUrl) {
@@ -158,25 +171,81 @@ async function buildStartupLine(): Promise<string> {
 }
 
 async function getSystemPromptWithContext(): Promise<string> {
+  const language = getCurrentLanguage();
+  if (cachedSystemPrompt?.language === language) {
+    return cachedSystemPrompt.content;
+  }
+
   const base = getSystemPrompt();
   const extra = await buildStartupLine();
-  return extra ? `${base}\n\n${extra}` : base;
+  const content = extra ? `${base}\n\n${extra}` : base;
+  cachedSystemPrompt = { language, content };
+  return content;
+}
+
+function getContextCharBudget(): number {
+  const raw = import.meta.env.VITE_CHAT_CONTEXT_CHAR_BUDGET;
+  const parsed = typeof raw === "string" ? Number.parseInt(raw, 10) : NaN;
+  return Number.isFinite(parsed) && parsed > 0
+    ? parsed
+    : DEFAULT_CONTEXT_CHAR_BUDGET;
+}
+
+function countMessageChars(message: ChatCompletionMessageParam): number {
+  const content = message.content;
+  const contentChars =
+    typeof content === "string" ? content.length : JSON.stringify(content).length;
+  return message.role.length + contentChars + MESSAGE_OVERHEAD_CHARS;
+}
+
+function fitMessagesToContextBudget(
+  messages: ChatCompletionMessageParam[],
+): ChatCompletionMessageParam[] {
+  const budget = getContextCharBudget();
+  const systemMessage = messages.find((message) => message.role === "system");
+  const nonSystemMessages = messages.filter((message) => message.role !== "system");
+  const kept: ChatCompletionMessageParam[] = [];
+  let used = systemMessage ? countMessageChars(systemMessage) : 0;
+
+  for (let index = nonSystemMessages.length - 1; index >= 0; index -= 1) {
+    const message = nonSystemMessages[index];
+    const nextUsed = used + countMessageChars(message);
+    if (nextUsed > budget && kept.length > 0) {
+      break;
+    }
+    kept.unshift(message);
+    used = nextUsed;
+  }
+
+  const trimmedCount = nonSystemMessages.length - kept.length;
+  if (trimmedCount > 0) {
+    console.warn(
+      `Trimmed ${trimmedCount} old chat message(s) to fit context budget (${budget} chars).`,
+    );
+  }
+
+  return systemMessage ? [systemMessage, ...kept] : kept;
 }
 
 async function toChatMessages(
   history: ChatTurn[],
   userInput: string,
 ): Promise<ChatCompletionMessageParam[]> {
-  const historyMessages: ChatCompletionMessageParam[] = history.map((m) => ({
-    role: m.role,
-    content: m.content,
-  }));
+  const historySystemMessage = history.find((m) => m.role === "system");
+  const systemContent =
+    historySystemMessage?.content ?? (await getSystemPromptWithContext());
+  const historyMessages: ChatCompletionMessageParam[] = history
+    .filter((m) => m.role !== "system")
+    .map((m) => ({
+      role: m.role,
+      content: m.content,
+    }));
 
-  return [
-    { role: "system", content: await getSystemPromptWithContext() },
+  return fitMessagesToContextBudget([
+    { role: "system", content: systemContent },
     ...historyMessages,
     { role: "user", content: userInput },
-  ];
+  ]);
 }
 
 function extractJsonText(raw: string): string {
@@ -597,19 +666,25 @@ export async function runMcpToolCallsDetailed(
 ): Promise<BartenderToolResult[]> {
   const results: BartenderToolResult[] = [];
   for (const call of calls) {
+    const historyId = recordMcpCallStart(call);
     // change_state is a frontend-only tool, don't send it to the backend
     if (call.tool === "change_state") {
-      results.push({ call, result: { state: call.args.state } });
+      const result = { state: call.args.state };
+      recordMcpCallFinish(historyId, { result });
+      results.push({ call, result });
       continue;
     }
 
     try {
       const result = await transport.callTool(call.tool, call.args);
+      recordMcpCallFinish(historyId, { result });
       results.push({ call, result });
     } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      recordMcpCallFinish(historyId, { error });
       results.push({
         call,
-        error: err instanceof Error ? err.message : String(err),
+        error,
       });
     }
   }
