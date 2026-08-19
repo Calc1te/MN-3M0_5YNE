@@ -14,7 +14,7 @@ import {
   type ChatTurn,
 } from "@/api_caller";
 import PDialog from "@/components/P_dialog";
-import PSprite from "@/components/P_sprite";
+import PFileDropTarget from "@/components/P_file_drop_target";
 import UserInput from "@/components/user_input";
 import {
   buildDefaultAppConfig,
@@ -71,6 +71,10 @@ export default function BartenderMain({
   const idleDeadlineRef = useRef<number | null>(null);
   const idleRunRef = useRef(false);
   const retainedToolReplyTimeoutRef = useRef<number | null>(null);
+  const activeConversationRef = useRef<{
+    controller: AbortController;
+    restoreInput: string | null;
+  } | null>(null);
 
   // While a response is streaming, only display the current reply. Falling back
   // to history here would replay the previous answer before new text arrives.
@@ -225,8 +229,18 @@ export default function BartenderMain({
       persistUserInput: boolean;
       clearInputAfterReply: boolean;
       automatic: boolean;
+      restoreInputOnCancel: boolean;
     },
   ) => {
+    if (activeConversationRef.current) {
+      return;
+    }
+
+    const controller = new AbortController();
+    activeConversationRef.current = {
+      controller,
+      restoreInput: options.restoreInputOnCancel ? prompt : null,
+    };
     let waitForDialogTyping = false;
     const baseHistory = historyRef.current;
     clearIdleTimer();
@@ -244,6 +258,7 @@ export default function BartenderMain({
         prompt,
         baseHistory,
         setReply,
+        controller.signal,
       );
       const hasToolCalls = response.toolCalls.length > 0;
 
@@ -286,7 +301,11 @@ export default function BartenderMain({
           );
           const toolResults = [
             ...(pendingCalls.length > 0
-              ? await runMcpToolCallsDetailed(pendingCalls, transport)
+              ? await runMcpToolCallsDetailed(
+                  pendingCalls,
+                  transport,
+                  controller.signal,
+                )
               : []),
             ...filteredResults,
           ];
@@ -306,6 +325,7 @@ export default function BartenderMain({
               clearRetainedToolReplyTimeout();
               setReply(text);
             },
+            controller.signal,
           );
           followUpHistory = [
             ...followUpHistory,
@@ -327,6 +347,7 @@ export default function BartenderMain({
                 setReply(text);
               }
             },
+            controller.signal,
           );
         }
 
@@ -374,6 +395,15 @@ export default function BartenderMain({
       setBartenderHistory(newHistory);
       setHistory(newHistory);
     } catch (err) {
+      if (controller.signal.aborted) {
+        clearRetainedToolReplyTimeout();
+        setReply("");
+        setToolStatus("");
+        setError(null);
+        setIsSpeaking(false);
+        setIsReplyComplete(false);
+        return;
+      }
       const errorMessage =
         err instanceof Error ? err.message : "Unknown error occurred";
       setError(errorMessage);
@@ -385,10 +415,31 @@ export default function BartenderMain({
       if (!waitForDialogTyping) {
         setIsSpeaking(false);
       }
-      setIsLoading(false);
-      isLoadingRef.current = false;
-      resetIdleTimer();
+      if (activeConversationRef.current?.controller === controller) {
+        activeConversationRef.current = null;
+        setIsLoading(false);
+        isLoadingRef.current = false;
+        resetIdleTimer();
+      }
     }
+  };
+
+  const handleCancelConversation = () => {
+    const activeConversation = activeConversationRef.current;
+    if (!activeConversation) {
+      return;
+    }
+
+    if (activeConversation.restoreInput !== null) {
+      setInput(activeConversation.restoreInput);
+    }
+    clearRetainedToolReplyTimeout();
+    setReply("");
+    setToolStatus("");
+    setError(null);
+    setIsSpeaking(false);
+    setIsReplyComplete(false);
+    activeConversation.controller.abort();
   };
 
   const handleIdleTrigger = async () => {
@@ -408,6 +459,7 @@ export default function BartenderMain({
         persistUserInput: false,
         clearInputAfterReply: false,
         automatic: true,
+        restoreInputOnCancel: false,
       },
     );
   };
@@ -420,8 +472,39 @@ export default function BartenderMain({
       persistUserInput: true,
       clearInputAfterReply: true,
       automatic: false,
+      restoreInputOnCancel: true,
     });
   };
+
+  const handleDroppedFiles = async (paths: string[]) => {
+    if (isLoadingRef.current) {
+      return;
+    }
+
+    const uniquePaths = [...new Set(paths.map((path) => path.trim()).filter(Boolean))];
+    if (uniquePaths.length === 0) {
+      return;
+    }
+
+    await runConversation(
+      t("prompts.fileDrop", {
+        count: uniquePaths.length,
+        paths: JSON.stringify(uniquePaths, null, 2),
+      }),
+      {
+        persistUserInput: true,
+        clearInputAfterReply: false,
+        automatic: false,
+        restoreInputOnCancel: false,
+      },
+    );
+  };
+
+  useEffect(() => {
+    return () => {
+      activeConversationRef.current?.controller.abort();
+    };
+  }, []);
 
   useEffect(() => {
     resetIdleTimer();
@@ -476,10 +559,9 @@ export default function BartenderMain({
           {toolStatus}
         </div>
       )}
-      <PSprite
-        className="p-sprite-container self-end"
-        data-tauri-drag-region
-        {...ghostModeRegionProps}
+      <PFileDropTarget
+        disabled={isLoading}
+        onFilesDropped={handleDroppedFiles}
       />
 
       {error && (
@@ -495,9 +577,11 @@ export default function BartenderMain({
         value={input}
         onChange={setInput}
         onSubmit={() => void handleSendMessage()}
+        onCancel={handleCancelConversation}
         placeholder={t("ui.inputPlaceholder") || "Enter message..."}
         disabled={isLoading}
-        buttonLabel={isLoading ? t("utils.sending") : t("utils.send")}
+        buttonLabel={t("utils.send")}
+        cancelLabel={t("utils.recall")}
         buttonClassName={cn("w-20 h-8 text-white", !usesPixelFont && "text-[9px]")}
         className="w-full justify-end"
         inputClassName={cn(

@@ -354,7 +354,9 @@ function extractAssistantPreview(raw: string): string {
 export async function chatWithBartender(
   userInput: string,
   history: ChatTurn[] = [],
+  signal?: AbortSignal,
 ): Promise<BartenderReply> {
+  signal?.throwIfAborted();
   const config = await resolveLlmConfig();
   if (!config.chatBaseUrl) {
     throw new Error("Missing VITE_BARTENDER_URL");
@@ -377,7 +379,7 @@ export async function chatWithBartender(
     messages: await toChatMessages(history, userInput),
   };
 
-  const completion = await openai.chat.completions.create(request);
+  const completion = await openai.chat.completions.create(request, { signal });
 
   const content = completion.choices[0]?.message?.content;
   if (!content) {
@@ -391,7 +393,9 @@ export async function chatWithBartenderStream(
   userInput: string,
   history: ChatTurn[] = [],
   onAssistantText?: (text: string) => void,
+  signal?: AbortSignal,
 ): Promise<BartenderReply> {
+  signal?.throwIfAborted();
   const config = await resolveLlmConfig();
   if (!config.chatBaseUrl) {
     throw new Error("Missing VITE_BARTENDER_URL");
@@ -408,12 +412,15 @@ export async function chatWithBartenderStream(
   }
 
   const openai = createOpenAiClient(apiKey, config.chatBaseUrl);
-  const stream = await openai.chat.completions.create({
-    model,
-    temperature: 0.7,
-    messages: await toChatMessages(history, userInput),
-    stream: true,
-  });
+  const stream = await openai.chat.completions.create(
+    {
+      model,
+      temperature: 0.7,
+      messages: await toChatMessages(history, userInput),
+      stream: true,
+    },
+    { signal },
+  );
 
   let raw = "";
   let lastAssistantText = "";
@@ -445,7 +452,9 @@ export async function chatWithBartenderStream(
 export async function createMemoryVector(
   memoryText: string,
   memoryContent: string,
+  signal?: AbortSignal,
 ): Promise<memoryEntry> {
+  signal?.throwIfAborted();
   const config = await resolveLlmConfig();
   const apiKey = config.apiKey || (await getRuntimeApiKey());
   if (!apiKey) {
@@ -470,6 +479,7 @@ export async function createMemoryVector(
       model,
       input: memoryText,
     }),
+    signal,
   });
 
   const payload = await parseEmbeddingResponse(response);
@@ -635,16 +645,22 @@ export async function checkEmbeddingModelConnection(
 }
 
 export interface McpTransport {
-  callTool: (tool: McpToolCall["tool"], args: Record<string, unknown>) => Promise<unknown>;
+  callTool: (
+    tool: McpToolCall["tool"],
+    args: Record<string, unknown>,
+    signal?: AbortSignal,
+  ) => Promise<unknown>;
 }
 
 export async function runMcpToolCalls(
   calls: McpToolCall[],
   transport: McpTransport,
+  signal?: AbortSignal,
 ): Promise<unknown[]> {
   const results: unknown[] = [];
   for (const call of calls) {
-    const result = await transport.callTool(call.tool, call.args);
+    signal?.throwIfAborted();
+    const result = await transport.callTool(call.tool, call.args, signal);
     results.push(result);
   }
   return results;
@@ -665,9 +681,11 @@ export interface BartenderConversationResult {
 export async function runMcpToolCallsDetailed(
   calls: McpToolCall[],
   transport: McpTransport,
+  signal?: AbortSignal,
 ): Promise<BartenderToolResult[]> {
   const results: BartenderToolResult[] = [];
   for (const call of calls) {
+    signal?.throwIfAborted();
     const historyId = recordMcpCallStart(call);
     // change_state is a frontend-only tool, don't send it to the backend
     if (call.tool === "change_state") {
@@ -678,10 +696,14 @@ export async function runMcpToolCallsDetailed(
     }
 
     try {
-      const result = await transport.callTool(call.tool, call.args);
+      const result = await transport.callTool(call.tool, call.args, signal);
       recordMcpCallFinish(historyId, { result });
       results.push({ call, result });
     } catch (err) {
+      if (signal?.aborted) {
+        recordMcpCallFinish(historyId, { error: "Cancelled" });
+        throw err;
+      }
       const error = err instanceof Error ? err.message : String(err);
       recordMcpCallFinish(historyId, { error });
       results.push({
@@ -808,8 +830,9 @@ export async function chatWithBartenderAndTools(
   userInput: string,
   history: ChatTurn[] = [],
   transport: McpTransport = createLocalMcpTransport(),
+  signal?: AbortSignal,
 ): Promise<BartenderConversationResult> {
-  const initialReply = await chatWithBartender(userInput, history);
+  const initialReply = await chatWithBartender(userInput, history, signal);
   let finalReply = initialReply;
   let followUpHistory: ChatTurn[] = [
     ...history,
@@ -833,7 +856,7 @@ export async function chatWithBartenderAndTools(
     );
     const roundResults = [
       ...(pendingCalls.length > 0
-        ? await runMcpToolCallsDetailed(pendingCalls, transport)
+        ? await runMcpToolCallsDetailed(pendingCalls, transport, signal)
         : []),
       ...filteredResults,
     ];
@@ -841,7 +864,7 @@ export async function chatWithBartenderAndTools(
     allToolResults.push(...roundResults);
 
     const resultPrompt = buildToolResultPrompt(roundResults);
-    finalReply = await chatWithBartender(resultPrompt, followUpHistory);
+    finalReply = await chatWithBartender(resultPrompt, followUpHistory, signal);
     followUpHistory = [
       ...followUpHistory,
       { role: "user", content: resultPrompt },
@@ -853,7 +876,11 @@ export async function chatWithBartenderAndTools(
       ...followUpHistory,
       { role: "assistant", content: JSON.stringify(finalReply) },
     ];
-    finalReply = await chatWithBartender(buildToolLoopLimitPrompt(), followUpHistory);
+    finalReply = await chatWithBartender(
+      buildToolLoopLimitPrompt(),
+      followUpHistory,
+      signal,
+    );
   }
 
   return {
@@ -879,6 +906,7 @@ const MCP_ENDPOINTS: Record<McpToolCall["tool"], string> = {
 async function normalizeToolArgs(
   tool: McpToolCall["tool"],
   args: Record<string, unknown>,
+  signal?: AbortSignal,
 ): Promise<Record<string, unknown>> {
   if (tool === "mix_data_drink" && !("file_paths" in args) && Array.isArray(args.ingredients)) {
     return { ...args, file_paths: args.ingredients };
@@ -890,7 +918,11 @@ async function normalizeToolArgs(
     }
 
     const tags = normalizeMemoryTags(args.tags);
-    const memory = await createMemoryVector(buildMemoryEmbeddingText(text, tags), text);
+    const memory = await createMemoryVector(
+      buildMemoryEmbeddingText(text, tags),
+      text,
+      signal,
+    );
     return {
       text,
       tags,
@@ -902,7 +934,7 @@ async function normalizeToolArgs(
     if (!text) {
       throw new Error("retrieve_memory requires text");
     }
-    const memory = await createMemoryVector(text, text);
+    const memory = await createMemoryVector(text, text, signal);
     return {
       vector: Array.from(memory.vector),
     };
@@ -912,12 +944,13 @@ async function normalizeToolArgs(
 
 export function createLocalMcpTransport(baseUrl = DEFAULT_MCP_DEBUG_BASE): McpTransport {
   return {
-    callTool: async (tool, args) => {
+    callTool: async (tool, args, signal) => {
       const endpoint = MCP_ENDPOINTS[tool];
       const response = await fetch(`${baseUrl}${endpoint}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(await normalizeToolArgs(tool, args)),
+        body: JSON.stringify(await normalizeToolArgs(tool, args, signal)),
+        signal,
       });
 
       const text = await response.text();
