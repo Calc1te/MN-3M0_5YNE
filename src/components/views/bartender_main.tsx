@@ -36,6 +36,10 @@ import {
   changeBartenderState,
   isBartenderState,
 } from "@/uiControllers/bartender";
+import {
+  clearBarCounterDrink,
+  showRandomBarCounterDrink,
+} from "@/uiControllers/bar-counter-drink";
 import { setIdleTriggerState } from "@/uiControllers/idle-trigger";
 
 interface BartenderMainProps {
@@ -188,7 +192,21 @@ export default function BartenderMain({
   };
 
   const applyToolStateChanges = (toolResults: BartenderToolResult[]) => {
-    for (const { call, result } of toolResults) {
+    for (const { call, result, error } of toolResults) {
+      if (error) {
+        continue;
+      }
+
+      if (call.tool === "mix_data_drink") {
+        showRandomBarCounterDrink();
+        continue;
+      }
+
+      if (call.tool === "finalize_drink") {
+        clearBarCounterDrink();
+        continue;
+      }
+
       if (call.tool !== "change_state") {
         continue;
       }

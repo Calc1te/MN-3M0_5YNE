@@ -62,6 +62,8 @@
     "debugLlmActive": "LLM active",
     "debugLlmIdle": "LLM idle",
     "debugState": "Bartender state",
+    "debugBarDrink": "Bar counter drink",
+    "debugBarDrinkRandom": "Randomize drink",
     "debugStatePlaceholder": "Select state",
     "debugScreenResolution": "Current screen",
     "debugWindowPosition": "Window position",

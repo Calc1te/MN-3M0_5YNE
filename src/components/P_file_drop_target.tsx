@@ -8,6 +8,10 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import PSprite from "@/components/P_sprite";
+import {
+  getBarCounterDrinkSprite,
+  onBarCounterDrinkChange,
+} from "@/uiControllers/bar-counter-drink";
 import { enableClick, ghostModeRegionProps } from "@/lib/ghost-mode";
 import { getChatFontClass } from "@/lib/language";
 import { cn } from "@/lib/utils";
@@ -34,6 +38,9 @@ export default function PFileDropTarget({
   const dragSessionRef = useRef(0);
   const [isFileDragActive, setIsFileDragActive] = useState(false);
   const [isFileOverP, setIsFileOverP] = useState(false);
+  const [barCounterDrink, setBarCounterDrink] = useState(() =>
+    getBarCounterDrinkSprite(),
+  );
 
   disabledRef.current = disabled;
   onFilesDroppedRef.current = onFilesDropped;
@@ -193,6 +200,8 @@ export default function PFileDropTarget({
     };
   }, []);
 
+  useEffect(() => onBarCounterDrinkChange(setBarCounterDrink), []);
+
   return (
     <div
       className={cn("p-sprite-container relative self-end", className)}
@@ -206,6 +215,15 @@ export default function PFileDropTarget({
         data-tauri-drag-region
         {...ghostModeRegionProps}
       />
+      {barCounterDrink && (
+        <img
+          src={barCounterDrink}
+          alt=""
+          aria-hidden="true"
+          className="pixelated pointer-events-none absolute left-[51px] top-[23px] z-10 block"
+          draggable={false}
+        />
+      )}
       {isFileDragActive && (
         <div
           aria-live="polite"

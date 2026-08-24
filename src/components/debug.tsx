@@ -41,6 +41,7 @@ import {
   onBartenderStateChange,
   type BartenderState,
 } from "@/uiControllers/bartender";
+import { showRandomBarCounterDrink } from "@/uiControllers/bar-counter-drink";
 import {
   getIdleTriggerState,
   onIdleTriggerStateChange,
@@ -394,6 +395,18 @@ export default function DebugMenu() {
           <div className="border border-border rounded px-3 py-2 text-sm">
             {countdownText}
           </div>
+        </section>
+        <section className="flex w-full max-w-xs flex-col gap-2">
+          <div className="text-sm font-medium">
+            {t("ui.debugBarDrink") || "Bar counter drink"}
+          </div>
+          <button
+            className="w-fit rounded border border-border px-3 py-2 text-xs text-muted-foreground hover:text-foreground"
+            onClick={showRandomBarCounterDrink}
+            type="button"
+          >
+            {t("ui.debugBarDrinkRandom") || "Randomize drink"}
+          </button>
         </section>
         <section className="flex w-full max-w-md flex-col gap-2">
           <div className="text-sm font-medium">

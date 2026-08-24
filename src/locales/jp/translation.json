@@ -64,6 +64,8 @@
     "debugLlmActive": "LLM リクエスト中",
     "debugLlmIdle": "LLM 待機中",
     "debugState": "P の状態",
+    "debugBarDrink": "カウンターのドリンク",
+    "debugBarDrinkRandom": "ランダムに切り替え",
     "debugStatePlaceholder": "状態を選択",
     "debugScreenResolution": "現在の画面",
     "debugWindowPosition": "ウィンドウ位置",

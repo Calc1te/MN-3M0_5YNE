@@ -64,6 +64,8 @@
     "debugLlmActive": "LLM 请求中",
     "debugLlmIdle": "LLM 空闲",
     "debugState": "P 的状态",
+    "debugBarDrink": "吧台饮料",
+    "debugBarDrinkRandom": "随机切换饮料",
     "debugStatePlaceholder": "选择状态",
     "debugScreenResolution": "所在屏幕",
     "debugWindowPosition": "窗口位置",
