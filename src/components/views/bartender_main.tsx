@@ -38,7 +38,7 @@ import {
 } from "@/uiControllers/bartender";
 import {
   clearBarCounterDrink,
-  showRandomBarCounterDrink,
+  showBarCounterDrink,
 } from "@/uiControllers/bar-counter-drink";
 import { setIdleTriggerState } from "@/uiControllers/idle-trigger";
 
@@ -90,6 +90,10 @@ export default function BartenderMain({
 
   const handleDialogTypingComplete = useCallback(() => {
     setIsSpeaking(false);
+  }, []);
+
+  const handleDrinkActionError = useCallback((message: string) => {
+    setError(message || null);
   }, []);
 
   const clearRetainedToolReplyTimeout = () => {
@@ -198,12 +202,32 @@ export default function BartenderMain({
       }
 
       if (call.tool === "mix_data_drink") {
-        showRandomBarCounterDrink();
+        const drinkId =
+          typeof result === "object" &&
+          result !== null &&
+          "drink_id" in result &&
+          typeof (result as { drink_id?: unknown }).drink_id === "string"
+            ? (result as { drink_id: string }).drink_id
+            : null;
+        if (drinkId) {
+          showBarCounterDrink(drinkId);
+        } else {
+          console.warn("MCP mix_data_drink did not return a drink_id.");
+        }
         continue;
       }
 
       if (call.tool === "finalize_drink") {
-        clearBarCounterDrink();
+        const drinkId =
+          typeof result === "object" &&
+          result !== null &&
+          "drink_id" in result &&
+          typeof (result as { drink_id?: unknown }).drink_id === "string"
+            ? (result as { drink_id: string }).drink_id
+            : typeof call.args.drink_id === "string"
+              ? call.args.drink_id
+              : undefined;
+        clearBarCounterDrink(drinkId);
         continue;
       }
 
@@ -580,6 +604,7 @@ export default function BartenderMain({
       <PFileDropTarget
         disabled={isLoading}
         onFilesDropped={handleDroppedFiles}
+        onDrinkActionError={handleDrinkActionError}
       />
 
       {error && (

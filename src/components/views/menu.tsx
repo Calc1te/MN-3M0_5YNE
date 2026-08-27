@@ -10,7 +10,13 @@ import {
   GHOST_CLICK_REGION_SELECTOR,
   ghostModeRegionProps,
 } from "@/lib/ghost-mode";
-import { useRef, type PointerEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 
@@ -23,12 +29,17 @@ export default function Menu({ children }: MenuProps) {
   const navigate = useNavigate();
 
   const pointerRef = useRef({ x: 0, y: 0 });
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const suppressContextMenuUntilRef = useRef(0);
+  const [isOpen, setIsOpen] = useState(false);
+  const [menuInstance, setMenuInstance] = useState(0);
 
-  const rememberPointer = (event: PointerEvent<HTMLElement>) => {
+  const rememberPointer = (event: ReactPointerEvent<HTMLElement>) => {
     pointerRef.current = { x: event.clientX, y: event.clientY };
   };
 
   const handleOpenChange = (nextOpen: boolean) => {
+    setIsOpen(nextOpen);
     if (nextOpen) {
       enableClick();
       return;
@@ -45,6 +56,47 @@ export default function Menu({ children }: MenuProps) {
     });
   };
 
+  useEffect(() => {
+    const suppressReopen = (event: globalThis.MouseEvent) => {
+      if (performance.now() > suppressContextMenuUntilRef.current) {
+        return;
+      }
+      suppressContextMenuUntilRef.current = 0;
+      event.preventDefault();
+      event.stopPropagation();
+    };
+
+    document.addEventListener("contextmenu", suppressReopen, true);
+    return () => {
+      document.removeEventListener("contextmenu", suppressReopen, true);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const closeFromOutsidePointer = (event: globalThis.PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Node && contentRef.current?.contains(target)) {
+        return;
+      }
+
+      pointerRef.current = { x: event.clientX, y: event.clientY };
+      if (event.button === 2) {
+        suppressContextMenuUntilRef.current = performance.now() + 500;
+      }
+      setMenuInstance((current) => current + 1);
+      handleOpenChange(false);
+    };
+
+    document.addEventListener("pointerdown", closeFromOutsidePointer, true);
+    return () => {
+      document.removeEventListener("pointerdown", closeFromOutsidePointer, true);
+    };
+  }, [isOpen]);
+
   const handleSetting = () => {
     navigate("/settings");
   };
@@ -53,10 +105,11 @@ export default function Menu({ children }: MenuProps) {
   };
 
   return (
-    <ContextMenu onOpenChange={handleOpenChange}>
+    <ContextMenu key={menuInstance} onOpenChange={handleOpenChange}>
       <ContextMenuTrigger asChild>
         <div
           className="min-h-screen w-full"
+          data-ghost-click-region={isOpen ? "true" : undefined}
           onPointerDown={rememberPointer}
           onPointerMove={rememberPointer}
         >
@@ -64,6 +117,7 @@ export default function Menu({ children }: MenuProps) {
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent
+        ref={contentRef}
         {...ghostModeRegionProps}
         onPointerDown={rememberPointer}
         onPointerMove={rememberPointer}

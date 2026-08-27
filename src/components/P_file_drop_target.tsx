@@ -7,11 +7,8 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import BarCounterDrinkMenu from "@/components/bar_counter_drink_menu";
 import PSprite from "@/components/P_sprite";
-import {
-  getBarCounterDrinkSprite,
-  onBarCounterDrinkChange,
-} from "@/uiControllers/bar-counter-drink";
 import { enableClick, ghostModeRegionProps } from "@/lib/ghost-mode";
 import { getChatFontClass } from "@/lib/language";
 import { cn } from "@/lib/utils";
@@ -19,12 +16,14 @@ import { cn } from "@/lib/utils";
 interface PFileDropTargetProps {
   disabled?: boolean;
   onFilesDropped: (paths: string[]) => void | Promise<void>;
+  onDrinkActionError?: (message: string) => void;
   className?: string;
 }
 
 export default function PFileDropTarget({
   disabled = false,
   onFilesDropped,
+  onDrinkActionError,
   className,
 }: PFileDropTargetProps) {
   const { t, i18n } = useTranslation();
@@ -38,9 +37,6 @@ export default function PFileDropTarget({
   const dragSessionRef = useRef(0);
   const [isFileDragActive, setIsFileDragActive] = useState(false);
   const [isFileOverP, setIsFileOverP] = useState(false);
-  const [barCounterDrink, setBarCounterDrink] = useState(() =>
-    getBarCounterDrinkSprite(),
-  );
 
   disabledRef.current = disabled;
   onFilesDroppedRef.current = onFilesDropped;
@@ -200,8 +196,6 @@ export default function PFileDropTarget({
     };
   }, []);
 
-  useEffect(() => onBarCounterDrinkChange(setBarCounterDrink), []);
-
   return (
     <div
       className={cn("p-sprite-container relative self-end", className)}
@@ -215,15 +209,10 @@ export default function PFileDropTarget({
         data-tauri-drag-region
         {...ghostModeRegionProps}
       />
-      {barCounterDrink && (
-        <img
-          src={barCounterDrink}
-          alt=""
-          aria-hidden="true"
-          className="pixelated pointer-events-none absolute left-[51px] top-[23px] z-10 block"
-          draggable={false}
-        />
-      )}
+      <BarCounterDrinkMenu
+        disabled={disabled}
+        onActionError={onDrinkActionError}
+      />
       {isFileDragActive && (
         <div
           aria-live="polite"

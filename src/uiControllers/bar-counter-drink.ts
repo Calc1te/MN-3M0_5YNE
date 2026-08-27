@@ -14,38 +14,75 @@ const DRINK_SPRITE_FILENAMES = [
 ] as const;
 
 export type BarCounterDrinkSprite =
-  | `${typeof DRINK_SPRITE_DIRECTORY}${(typeof DRINK_SPRITE_FILENAMES)[number]}`
-  | null;
+  `${typeof DRINK_SPRITE_DIRECTORY}${(typeof DRINK_SPRITE_FILENAMES)[number]}`;
 
-const listeners = new Set<(sprite: BarCounterDrinkSprite) => void>();
-let currentSprite: BarCounterDrinkSprite = null;
+export type BarCounterDrinkSelection = {
+  drinkId: string | null;
+  sprite: BarCounterDrinkSprite | null;
+};
 
-function notify(): void {
-  for (const listener of listeners) listener(currentSprite);
+const listeners = new Set<(selection: BarCounterDrinkSelection) => void>();
+let currentSelection: BarCounterDrinkSelection = {
+  drinkId: null,
+  sprite: null,
+};
+
+function spriteForDrinkId(drinkId: string): BarCounterDrinkSprite {
+  let hash = 2166136261;
+  for (const char of drinkId) {
+    hash ^= char.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  const filename =
+    DRINK_SPRITE_FILENAMES[
+      (hash >>> 0) % DRINK_SPRITE_FILENAMES.length
+    ];
+  return `${DRINK_SPRITE_DIRECTORY}${filename}`;
 }
 
-export function getBarCounterDrinkSprite(): BarCounterDrinkSprite {
-  return currentSprite;
+function notify(): void {
+  for (const listener of listeners) listener(currentSelection);
+}
+
+export function getBarCounterDrink(): BarCounterDrinkSelection {
+  return currentSelection;
+}
+
+export function showBarCounterDrink(
+  drinkId: string,
+): BarCounterDrinkSelection {
+  currentSelection = {
+    drinkId,
+    sprite: spriteForDrinkId(drinkId),
+  };
+  notify();
+  return currentSelection;
 }
 
 export function showRandomBarCounterDrink(): BarCounterDrinkSprite {
   const choices = DRINK_SPRITE_FILENAMES.filter(
-    (filename) => `${DRINK_SPRITE_DIRECTORY}${filename}` !== currentSprite,
+    (filename) =>
+      `${DRINK_SPRITE_DIRECTORY}${filename}` !== currentSelection.sprite,
   );
   const filename = choices[Math.floor(Math.random() * choices.length)];
-  currentSprite = `${DRINK_SPRITE_DIRECTORY}${filename}`;
+  const sprite =
+    `${DRINK_SPRITE_DIRECTORY}${filename}` as BarCounterDrinkSprite;
+  currentSelection = { drinkId: null, sprite };
   notify();
-  return currentSprite;
+  return sprite;
 }
 
-export function clearBarCounterDrink(): void {
-  if (currentSprite === null) return;
-  currentSprite = null;
+export function clearBarCounterDrink(drinkId?: string): void {
+  if (drinkId && currentSelection.drinkId !== drinkId) {
+    notify();
+    return;
+  }
+  currentSelection = { drinkId: null, sprite: null };
   notify();
 }
 
 export function onBarCounterDrinkChange(
-  listener: (sprite: BarCounterDrinkSprite) => void,
+  listener: (selection: BarCounterDrinkSelection) => void,
 ): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
