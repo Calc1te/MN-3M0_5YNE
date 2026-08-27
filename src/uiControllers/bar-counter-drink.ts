@@ -1,4 +1,4 @@
-const DRINK_SPRITE_DIRECTORY = "/assets/sprites/drink-sprites-transparent/";
+const DRINK_SPRITE_DIRECTORY = "/assets/sprites/drinks/";
 
 const DRINK_SPRITE_FILENAMES = [
   "A_Fedora_spr_0.png", "Absinthe_spr_0.png", "Bad_Touch_spr_0.png",
