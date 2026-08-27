@@ -727,6 +727,34 @@ export async function runMcpToolCallsDetailed(
   return results;
 }
 
+function toolResultForModel(
+  tool: McpToolCall["tool"],
+  result: unknown,
+): unknown {
+  if (typeof result !== "object" || result === null) {
+    return result;
+  }
+
+  const payload = result as Record<string, unknown>;
+  if (tool === "mix_data_drink") {
+    return {
+      message: payload.message,
+      drink_name: payload.drink_name,
+      staged_count: payload.staged_count,
+    };
+  }
+  if (tool === "finalize_drink") {
+    return {
+      drink_name: payload.drink_name,
+      action: payload.action,
+      affected_count: Array.isArray(payload.affected_paths)
+        ? payload.affected_paths.length
+        : undefined,
+    };
+  }
+  return result;
+}
+
 export function buildToolResultPrompt(toolResults: BartenderToolResult[]): string {
   const language = getCurrentLanguage();
   const t = i18n.getFixedT(language);
@@ -757,7 +785,7 @@ export function buildToolResultPrompt(toolResults: BartenderToolResult[]): strin
               presentation_note: baseListPresentationNote,
             }
           : {}),
-        result,
+        result: toolResultForModel(call.tool, result),
         error,
       })),
       null,
@@ -793,8 +821,8 @@ function splitToolCallsForRound(
       (call.tool === "get_base" ||
         call.tool === "mix_data_drink" ||
         call.tool === "finalize_drink");
-    const waitsForDrinkId = stagesDrink && call.tool === "finalize_drink";
-    if (waitsForBaseList || waitsForDrinkId) {
+    const waitsForStagedDrink = stagesDrink && call.tool === "finalize_drink";
+    if (waitsForBaseList || waitsForStagedDrink) {
       filteredResults.push({
         call,
         error:

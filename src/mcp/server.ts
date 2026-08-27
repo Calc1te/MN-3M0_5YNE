@@ -246,13 +246,14 @@ function createServer(): McpServer {
     "mix_data_drink",
     {
       title: "mix_data_drink",
-      description: "Stage selected files into ./.bar and return a drink_id.",
+      description: "Name a data drink and stage its selected files.",
       inputSchema: {
         file_paths: z.array(z.string()).min(1),
+        drink_name: z.string().trim().min(1).max(80),
       },
     },
-    async ({ file_paths }) => {
-      const result = await callRust<unknown>("/mix", { file_paths });
+    async ({ file_paths, drink_name }) => {
+      const result = await callRust<unknown>("/mix", { file_paths, drink_name });
       return asTextResult(result);
     },
   );
@@ -261,14 +262,14 @@ function createServer(): McpServer {
     "finalize_drink",
     {
       title: "finalize_drink",
-      description: "Finalize staged files: drink=delete, restore=move back.",
+      description: "Finalize a named pending drink: drink=delete, restore=move back.",
       inputSchema: {
-        drink_id: z.string().min(1),
+        drink_name: z.string().trim().min(1).max(80),
         action: z.enum(["drink", "restore"]),
       },
     },
-    async ({ drink_id, action }) => {
-      const result = await callRust<unknown>("/mix/finalize", { drink_id, action });
+    async ({ drink_name, action }) => {
+      const result = await callRust<unknown>("/mix/finalize", { drink_name, action });
       return asTextResult(result);
     },
   );

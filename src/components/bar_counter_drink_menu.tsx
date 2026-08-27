@@ -36,6 +36,7 @@ type StagedFile = {
 
 type StagedDrink = {
   drink_id: string;
+  drink_name: string;
   staged_dir: string;
   staged_files: StagedFile[];
   modified_unix_secs: number | null;
@@ -44,9 +45,15 @@ type StagedDrink = {
 type DrinkAction = "drink" | "restore";
 type MenuMode = "current" | "all";
 
+export type DrinkActionEvent = {
+  drinkName: string;
+  action: DrinkAction;
+};
+
 interface BarCounterDrinkMenuProps {
   disabled?: boolean;
   onActionError?: (message: string) => void;
+  onActionComplete?: (event: DrinkActionEvent) => void;
 }
 
 const isTauriApp =
@@ -58,6 +65,10 @@ function fileName(path: string): string {
 }
 
 function drinkLabel(drink: StagedDrink): string {
+  const name = drink.drink_name?.trim();
+  if (name) {
+    return name;
+  }
   const firstFile = drink.staged_files[0];
   if (!firstFile) {
     return drink.drink_id;
@@ -71,6 +82,7 @@ function drinkLabel(drink: StagedDrink): string {
 export default function BarCounterDrinkMenu({
   disabled = false,
   onActionError,
+  onActionComplete,
 }: BarCounterDrinkMenuProps) {
   const { t } = useTranslation();
   const [selection, setSelection] = useState<BarCounterDrinkSelection>(() =>
@@ -122,11 +134,12 @@ export default function BarCounterDrinkMenu({
     });
   }, [refreshDrinks]);
 
-  const finalizeDrink = async (drinkId: string, action: DrinkAction) => {
+  const finalizeDrink = async (drink: StagedDrink, action: DrinkAction) => {
     if (disabled || pendingDrinkId || !isTauriApp) {
       return;
     }
 
+    const drinkId = drink.drink_id;
     setPendingDrinkId(drinkId);
     onActionError?.("");
     try {
@@ -144,6 +157,10 @@ export default function BarCounterDrinkMenu({
         clearBarCounterDrink(drinkId);
       }
       setIsMenuOpen(false);
+      onActionComplete?.({
+        drinkName: drinkLabel(drink),
+        action,
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error("Failed to finalize drink:", error);
@@ -195,14 +212,14 @@ export default function BarCounterDrinkMenu({
       <>
         <ContextMenuItem
           disabled={disabled || actionPending}
-          onSelect={() => void finalizeDrink(drink.drink_id, "drink")}
+          onSelect={() => void finalizeDrink(drink, "drink")}
         >
           <GlassWater className="mr-2 size-4" />
           {actionPending ? t("ui.drinkMenuWorking") : t("ui.drinkMenuDrink")}
         </ContextMenuItem>
         <ContextMenuItem
           disabled={disabled || actionPending}
-          onSelect={() => void finalizeDrink(drink.drink_id, "restore")}
+          onSelect={() => void finalizeDrink(drink, "restore")}
         >
           <RotateCcw className="mr-2 size-4" />
           {actionPending

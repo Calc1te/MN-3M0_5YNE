@@ -73,6 +73,7 @@ struct BaseGetRequest {
 struct MixDataDrinkRequest {
     file_paths: Option<Vec<String>>,
     ingredients: Option<Vec<String>>,
+    drink_name: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -84,6 +85,8 @@ struct StagedFileRecord {
 #[derive(Serialize, Deserialize)]
 struct DrinkManifest {
     drink_id: String,
+    #[serde(default)]
+    drink_name: String,
     staged_files: Vec<StagedFileRecord>,
 }
 
@@ -91,19 +94,22 @@ struct DrinkManifest {
 struct MixDataDrinkResponse {
     message: String,
     drink_id: String,
+    drink_name: String,
     staged_dir: String,
     staged_count: usize,
 }
 
 #[derive(Deserialize)]
 struct FinalizeDrinkRequest {
-    drink_id: String,
+    drink_id: Option<String>,
+    drink_name: Option<String>,
     action: String,
 }
 
 #[derive(Serialize)]
 struct FinalizeDrinkResponse {
     drink_id: String,
+    drink_name: String,
     action: String,
     affected_paths: Vec<String>,
 }
@@ -111,6 +117,7 @@ struct FinalizeDrinkResponse {
 #[derive(Serialize)]
 struct DebugStagedDrink {
     drink_id: String,
+    drink_name: String,
     staged_dir: String,
     staged_files: Vec<StagedFileRecord>,
     modified_unix_secs: Option<u64>,
@@ -698,6 +705,7 @@ fn read_debug_staged_drinks() -> Result<Vec<DebugStagedDrink>, String> {
 
         drinks.push(DebugStagedDrink {
             drink_id: manifest.drink_id,
+            drink_name: manifest.drink_name,
             staged_dir: session_dir.to_string_lossy().into_owned(),
             staged_files: manifest.staged_files,
             modified_unix_secs,
@@ -706,6 +714,52 @@ fn read_debug_staged_drinks() -> Result<Vec<DebugStagedDrink>, String> {
 
     drinks.sort_by(|a, b| b.modified_unix_secs.cmp(&a.modified_unix_secs));
     Ok(drinks)
+}
+
+fn staged_drink_display_name(drink_name: &str, staged_files: &[StagedFileRecord]) -> String {
+    let drink_name = drink_name.trim();
+    if !drink_name.is_empty() {
+        return drink_name.to_string();
+    }
+
+    let Some(first_file) = staged_files.first() else {
+        return String::new();
+    };
+    let first_name = Path::new(&first_file.original_path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(&first_file.original_path);
+    let remaining = staged_files.len().saturating_sub(1);
+    if remaining > 0 {
+        format!("{first_name} +{remaining}")
+    } else {
+        first_name.to_string()
+    }
+}
+
+fn resolve_pending_drink_id(drink_name: &str) -> Result<String, String> {
+    let target_name = drink_name.trim();
+    if target_name.is_empty() {
+        return Err("drink_name is required".to_string());
+    }
+    let target_name_folded = target_name.to_lowercase();
+
+    let matches = read_debug_staged_drinks()?
+        .into_iter()
+        .filter(|drink| {
+            staged_drink_display_name(&drink.drink_name, &drink.staged_files).to_lowercase()
+                == target_name_folded
+        })
+        .map(|drink| drink.drink_id)
+        .collect::<Vec<_>>();
+
+    match matches.as_slice() {
+        [drink_id] => Ok(drink_id.clone()),
+        [] => Err(format!("No pending drink named '{target_name}'")),
+        _ => Err(format!(
+            "Multiple pending drinks are named '{target_name}'; use the drink menu to choose one"
+        )),
+    }
 }
 
 fn trim_to_chars(input: String, max_chars: usize) -> String {
@@ -943,10 +997,25 @@ fn permanently_delete(path: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn stage_files_for_drink(file_paths: Vec<String>) -> Result<MixDataDrinkResponse, String> {
+fn normalize_drink_name(drink_name: Option<String>) -> Result<String, String> {
+    let drink_name = drink_name
+        .map(|name| name.trim().to_string())
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| "drink_name is required".to_string())?;
+    if drink_name.chars().count() > 80 {
+        return Err("drink_name must be 80 characters or fewer".to_string());
+    }
+    Ok(drink_name)
+}
+
+fn stage_files_for_drink(
+    file_paths: Vec<String>,
+    drink_name: Option<String>,
+) -> Result<MixDataDrinkResponse, String> {
     if file_paths.is_empty() {
         return Err("file_paths cannot be empty".to_string());
     }
+    let drink_name = normalize_drink_name(drink_name)?;
 
     let bar = shaker_root_dir()?;
     let drink_id = build_drink_id();
@@ -993,6 +1062,7 @@ fn stage_files_for_drink(file_paths: Vec<String>) -> Result<MixDataDrinkResponse
 
     let manifest = DrinkManifest {
         drink_id: drink_id.clone(),
+        drink_name: drink_name.clone(),
         staged_files: staged,
     };
     write_manifest(&session_dir, &manifest)?;
@@ -1000,13 +1070,55 @@ fn stage_files_for_drink(file_paths: Vec<String>) -> Result<MixDataDrinkResponse
     Ok(MixDataDrinkResponse {
         message: format!("Staged {} file(s) for drink", manifest.staged_files.len()),
         drink_id,
+        drink_name,
         staged_dir: session_dir.to_string_lossy().into_owned(),
         staged_count: manifest.staged_files.len(),
     })
 }
 
+#[cfg(test)]
+mod drink_manifest_tests {
+    use super::{DrinkManifest, StagedFileRecord, normalize_drink_name, staged_drink_display_name};
+
+    #[test]
+    fn validates_and_trims_drink_names() {
+        assert_eq!(
+            normalize_drink_name(Some("  Cold Compile  ".to_string())).unwrap(),
+            "Cold Compile"
+        );
+        assert!(normalize_drink_name(Some("   ".to_string())).is_err());
+        assert!(normalize_drink_name(Some("x".repeat(81))).is_err());
+    }
+
+    #[test]
+    fn reads_legacy_manifest_without_drink_name() {
+        let manifest: DrinkManifest =
+            serde_json::from_str(r#"{"drink_id":"drink-legacy","staged_files":[]}"#).unwrap();
+
+        assert_eq!(manifest.drink_id, "drink-legacy");
+        assert!(manifest.drink_name.is_empty());
+    }
+
+    #[test]
+    fn gives_legacy_drinks_the_same_fallback_name_as_the_menu() {
+        let files = vec![
+            StagedFileRecord {
+                original_path: "/tmp/old-notes.txt".to_string(),
+                staged_path: "/tmp/staged-1".to_string(),
+            },
+            StagedFileRecord {
+                original_path: "/tmp/other.txt".to_string(),
+                staged_path: "/tmp/staged-2".to_string(),
+            },
+        ];
+
+        assert_eq!(staged_drink_display_name("", &files), "old-notes.txt +1");
+    }
+}
+
 fn finalize_drink_internal(drink_id: &str, action: &str) -> Result<FinalizeDrinkResponse, String> {
     let (session_dir, manifest) = read_manifest(drink_id)?;
+    let drink_name = staged_drink_display_name(&manifest.drink_name, &manifest.staged_files);
     let mut affected_paths = Vec::new();
 
     match action {
@@ -1046,6 +1158,7 @@ fn finalize_drink_internal(drink_id: &str, action: &str) -> Result<FinalizeDrink
 
     Ok(FinalizeDrinkResponse {
         drink_id: manifest.drink_id,
+        drink_name,
         action: action.to_string(),
         affected_paths,
     })
@@ -1277,6 +1390,7 @@ fn get_base(
 fn mix_data_drink(
     file_paths: Option<Vec<String>>,
     ingredients: Option<Vec<String>>,
+    drink_name: Option<String>,
 ) -> Result<MixDataDrinkResponse, String> {
     let selected_paths = if let Some(paths) = file_paths {
         paths
@@ -1288,7 +1402,7 @@ fn mix_data_drink(
     if selected_paths.is_empty() {
         return Err("file_paths cannot be empty".to_string());
     }
-    stage_files_for_drink(selected_paths)
+    stage_files_for_drink(selected_paths, drink_name)
 }
 
 #[tauri::command]
@@ -1425,7 +1539,7 @@ async fn mix_data_drink_handler(
         Vec::new()
     };
 
-    let result = stage_files_for_drink(selected_paths)
+    let result = stage_files_for_drink(selected_paths, req.drink_name)
         .map_err(|error| (StatusCode::BAD_REQUEST, Json(ApiError { error })))?;
     Ok(Json(result))
 }
@@ -1434,7 +1548,12 @@ async fn finalize_drink_handler(
     State(_state): State<Arc<ApiState>>,
     Json(req): Json<FinalizeDrinkRequest>,
 ) -> Result<Json<FinalizeDrinkResponse>, (StatusCode, Json<ApiError>)> {
-    let result = finalize_drink_internal(&req.drink_id, &req.action)
+    let drink_id = match req.drink_id {
+        Some(drink_id) if !drink_id.trim().is_empty() => drink_id,
+        _ => resolve_pending_drink_id(req.drink_name.as_deref().unwrap_or_default())
+            .map_err(|error| (StatusCode::BAD_REQUEST, Json(ApiError { error })))?,
+    };
+    let result = finalize_drink_internal(&drink_id, &req.action)
         .map_err(|error| (StatusCode::BAD_REQUEST, Json(ApiError { error })))?;
     Ok(Json(result))
 }

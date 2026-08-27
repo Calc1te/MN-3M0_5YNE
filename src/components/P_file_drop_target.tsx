@@ -7,7 +7,9 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import BarCounterDrinkMenu from "@/components/bar_counter_drink_menu";
+import BarCounterDrinkMenu, {
+  type DrinkActionEvent,
+} from "@/components/bar_counter_drink_menu";
 import PSprite from "@/components/P_sprite";
 import { enableClick, ghostModeRegionProps } from "@/lib/ghost-mode";
 import { getChatFontClass } from "@/lib/language";
@@ -17,6 +19,7 @@ interface PFileDropTargetProps {
   disabled?: boolean;
   onFilesDropped: (paths: string[]) => void | Promise<void>;
   onDrinkActionError?: (message: string) => void;
+  onDrinkActionComplete?: (event: DrinkActionEvent) => void;
   className?: string;
 }
 
@@ -24,6 +27,7 @@ export default function PFileDropTarget({
   disabled = false,
   onFilesDropped,
   onDrinkActionError,
+  onDrinkActionComplete,
   className,
 }: PFileDropTargetProps) {
   const { t, i18n } = useTranslation();
@@ -212,6 +216,7 @@ export default function PFileDropTarget({
       <BarCounterDrinkMenu
         disabled={disabled}
         onActionError={onDrinkActionError}
+        onActionComplete={onDrinkActionComplete}
       />
       {isFileDragActive && (
         <div

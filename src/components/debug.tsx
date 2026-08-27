@@ -61,6 +61,7 @@ type DebugStagedFile = {
 
 type DebugStagedDrink = {
   drink_id: string;
+  drink_name: string;
   staged_dir: string;
   staged_files: DebugStagedFile[];
   modified_unix_secs: number | null;
@@ -457,6 +458,11 @@ export default function DebugMenu() {
                     className="border-b border-border pb-3 last:border-b-0 last:pb-0"
                     key={drink.drink_id}
                   >
+                    {drink.drink_name && (
+                      <div className="mb-1 font-medium text-foreground">
+                        {drink.drink_name}
+                      </div>
+                    )}
                     <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1">
                       <span className="font-mono text-foreground">
                         {drink.drink_id}

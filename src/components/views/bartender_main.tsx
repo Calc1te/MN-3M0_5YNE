@@ -12,9 +12,11 @@ import {
   runMcpToolCallsDetailed,
   type BartenderToolResult,
   type ChatTurn,
+  type McpToolCall,
 } from "@/api_caller";
 import PDialog from "@/components/P_dialog";
 import PFileDropTarget from "@/components/P_file_drop_target";
+import type { DrinkActionEvent } from "@/components/bar_counter_drink_menu";
 import UserInput from "@/components/user_input";
 import {
   buildDefaultAppConfig,
@@ -272,6 +274,8 @@ export default function BartenderMain({
       clearInputAfterReply: boolean;
       automatic: boolean;
       restoreInputOnCancel: boolean;
+      persistedUserContent?: string;
+      allowedTools?: McpToolCall["tool"][];
     },
   ) => {
     if (activeConversationRef.current) {
@@ -296,12 +300,25 @@ export default function BartenderMain({
     setReply("");
 
     try {
-      let response = await chatWithBartenderStream(
+      const applyToolPolicy = (response: Awaited<ReturnType<typeof chatWithBartenderStream>>) => {
+        if (!options.allowedTools) {
+          return response;
+        }
+        const allowedTools = new Set(options.allowedTools);
+        return {
+          ...response,
+          toolCalls: response.toolCalls.filter((call) =>
+            allowedTools.has(call.tool),
+          ),
+        };
+      };
+
+      let response = applyToolPolicy(await chatWithBartenderStream(
         prompt,
         baseHistory,
         setReply,
         controller.signal,
-      );
+      ));
       const hasToolCalls = response.toolCalls.length > 0;
 
       if (options.clearInputAfterReply) {
@@ -357,7 +374,7 @@ export default function BartenderMain({
           const resultPrompt = buildToolResultPrompt(toolResults);
           setIsReplyComplete(false);
           setIsSpeaking(true);
-          response = await chatWithBartenderStream(
+          response = applyToolPolicy(await chatWithBartenderStream(
             resultPrompt,
             followUpHistory,
             (text) => {
@@ -368,7 +385,7 @@ export default function BartenderMain({
               setReply(text);
             },
             controller.signal,
-          );
+          ));
           followUpHistory = [
             ...followUpHistory,
             { role: "user", content: resultPrompt },
@@ -380,7 +397,7 @@ export default function BartenderMain({
             ...followUpHistory,
             { role: "assistant", content: JSON.stringify(response) },
           ];
-          response = await chatWithBartenderStream(
+          response = applyToolPolicy(await chatWithBartenderStream(
             buildToolLoopLimitPrompt(),
             followUpHistory,
             (text) => {
@@ -390,7 +407,7 @@ export default function BartenderMain({
               }
             },
             controller.signal,
-          );
+          ));
         }
 
         clearRetainedToolReplyTimeout();
@@ -399,10 +416,11 @@ export default function BartenderMain({
         setIsReplyComplete(true);
         waitForDialogTyping = true;
 
+        const persistedUserContent = options.persistedUserContent ?? prompt;
         const nextHistory = options.persistUserInput
           ? [
               ...baseHistory,
-              { role: "user" as const, content: prompt },
+              { role: "user" as const, content: persistedUserContent },
               { role: "assistant" as const, content: response.assistant },
             ]
           : [
@@ -418,10 +436,11 @@ export default function BartenderMain({
       setIsReplyComplete(true);
       waitForDialogTyping = true;
 
+      const persistedUserContent = options.persistedUserContent ?? prompt;
       const newHistory: ChatTurn[] = options.persistUserInput
         ? [
             ...baseHistory,
-            { role: "user", content: prompt },
+            { role: "user", content: persistedUserContent },
             {
               role: "assistant",
               content: response.assistant,
@@ -542,6 +561,34 @@ export default function BartenderMain({
     );
   };
 
+  const handleDrinkActionComplete = ({
+    drinkName,
+    action,
+  }: DrinkActionEvent) => {
+    const actionText = t(
+      action === "drink"
+        ? "ui.drinkActionHistoryDrink"
+        : "ui.drinkActionHistoryRestore",
+      { drink: drinkName },
+    );
+    void runConversation(
+      t("prompts.drinkAction", {
+        action: t(
+          action === "drink" ? "ui.drinkMenuDrink" : "ui.drinkMenuRestore",
+        ),
+        drink: drinkName,
+      }),
+      {
+        persistUserInput: true,
+        persistedUserContent: actionText,
+        clearInputAfterReply: false,
+        automatic: false,
+        restoreInputOnCancel: false,
+        allowedTools: ["change_state"],
+      },
+    );
+  };
+
   useEffect(() => {
     return () => {
       activeConversationRef.current?.controller.abort();
@@ -605,6 +652,7 @@ export default function BartenderMain({
         disabled={isLoading}
         onFilesDropped={handleDroppedFiles}
         onDrinkActionError={handleDrinkActionError}
+        onDrinkActionComplete={handleDrinkActionComplete}
       />
 
       {error && (
