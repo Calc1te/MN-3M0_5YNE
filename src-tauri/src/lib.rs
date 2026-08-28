@@ -31,6 +31,8 @@ const APP_CONFIG_FILE_NAME: &str = "configs.json";
 const LOGS_DIR_NAME: &str = "logs";
 const TAURI_LOG_FILE_NAME: &str = "tauri.log";
 const WEBVIEW_LOG_FILE_NAME: &str = "webview.log";
+const PLAIN_MEMORY_FILE_NAME: &str = "memory.md";
+const MAX_PLAIN_MEMORY_CHARS: usize = 12_000;
 
 #[derive(Clone)]
 struct ApiState;
@@ -137,7 +139,8 @@ struct AddMemoryRequest {
 
 #[derive(Deserialize)]
 struct RetrieveMemoryRequest {
-    vector: Vec<f32>,
+    text: Option<String>,
+    vector: Option<Vec<f32>>,
 }
 
 #[derive(Serialize)]
@@ -160,8 +163,14 @@ struct ConnectionStatusResponse {
     online: bool,
 }
 
+#[derive(Serialize)]
+struct MemoryBackendResponse {
+    use_experimental_vector_memory: bool,
+}
+
 static CURRENT_BASE_DIR: OnceLock<Mutex<PathBuf>> = OnceLock::new();
 static STARTUP_CONTEXT: OnceLock<BarConfig> = OnceLock::new();
+static MEMORY_FILE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 fn current_base_dir() -> PathBuf {
     let default_dir = dirs::desktop_dir().unwrap_or_else(|| ".".into());
@@ -228,6 +237,8 @@ struct BarConfig {
     embedding_base_url: String,
     #[serde(rename = "Embedding_Model", default)]
     embedding_model: String,
+    #[serde(rename = "Use_Experimental_Vector_Memory", default)]
+    use_experimental_vector_memory: bool,
     #[serde(rename = "Setup_Completed", default)]
     setup_completed: bool,
     #[serde(rename = "Remember_On_Exit", default)]
@@ -284,6 +295,7 @@ impl Default for BarConfig {
             chat_model: String::new(),
             embedding_base_url: String::new(),
             embedding_model: String::new(),
+            use_experimental_vector_memory: false,
             setup_completed: false,
             remember_on_exit: false,
             always_on_top: false,
@@ -635,6 +647,59 @@ fn memory_db_dir() -> Result<PathBuf, String> {
         )
     })?;
     Ok(dir)
+}
+
+fn plain_memory_path() -> Result<PathBuf, String> {
+    Ok(bar_root_dir()?.join(PLAIN_MEMORY_FILE_NAME))
+}
+
+fn read_plain_memory() -> Result<String, String> {
+    let path = plain_memory_path()?;
+    if !path.exists() {
+        return Ok(String::new());
+    }
+
+    let memory = fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read plain memory {}: {e}", path.display()))?;
+    if memory.chars().count() > MAX_PLAIN_MEMORY_CHARS {
+        return Err(format!(
+            "Plain memory exceeds the {MAX_PLAIN_MEMORY_CHARS}-character prompt budget: {}",
+            path.display()
+        ));
+    }
+    Ok(memory.trim().to_string())
+}
+
+fn add_plain_memory(text: &str, tags: &[String], created_at: i64) -> Result<String, String> {
+    let _guard = MEMORY_FILE_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .map_err(|_| "Plain memory lock was poisoned".to_string())?;
+    let path = plain_memory_path()?;
+    let existing = if path.exists() {
+        fs::read_to_string(&path)
+            .map_err(|e| format!("Failed to read plain memory {}: {e}", path.display()))?
+    } else {
+        String::new()
+    };
+    let tags_line = if tags.is_empty() {
+        String::new()
+    } else {
+        format!("\nTags: {}", tags.join(", "))
+    };
+    let entry = format!("## Memory {created_at}{tags_line}\n{}\n", text.trim());
+    let separator = if existing.trim().is_empty() { "" } else { "\n" };
+    let next = format!("{existing}{separator}{entry}");
+    if next.chars().count() > MAX_PLAIN_MEMORY_CHARS {
+        return Err(format!(
+            "Plain memory is full ({MAX_PLAIN_MEMORY_CHARS} characters). Edit {} to remove obsolete entries before adding more.",
+            path.display()
+        ));
+    }
+
+    fs::write(&path, next)
+        .map_err(|e| format!("Failed to write plain memory {}: {e}", path.display()))?;
+    Ok(path.to_string_lossy().into_owned())
 }
 
 fn build_drink_id() -> String {
@@ -1275,8 +1340,21 @@ async fn add_memory_internal(
         .filter(|tag| !tag.is_empty())
         .collect::<Vec<_>>();
 
-    let vector = normalize_memory_vector(vector, trimmed)?;
     let now = Local::now().timestamp();
+    if !read_config()?.use_experimental_vector_memory {
+        let id = build_memory_id();
+        add_plain_memory(trimmed, &tags, now)?;
+        return Ok(AddMemoryResponse {
+            id,
+            text: trimmed.to_string(),
+            vector: Vec::new(),
+            tags,
+            created_at: now,
+            updated_at: now,
+        });
+    }
+
+    let vector = normalize_memory_vector(vector, trimmed)?;
     let record = MemoryRecord {
         id: build_memory_id(),
         text,
@@ -1296,6 +1374,25 @@ async fn add_memory_internal(
         created_at: record.created_at,
         updated_at: record.updated_at,
     })
+}
+
+async fn retrieve_memory_internal(
+    text: Option<String>,
+    vector: Option<Vec<f32>>,
+) -> Result<Vec<String>, String> {
+    if !read_config()?.use_experimental_vector_memory {
+        let _query = text.unwrap_or_default();
+        let memory = read_plain_memory()?;
+        return Ok(if memory.is_empty() {
+            Vec::new()
+        } else {
+            vec![memory]
+        });
+    }
+
+    let vector = normalize_memory_vector(vector, "")?;
+    let uri = memory_db_dir()?.to_string_lossy().into_owned();
+    lance::retrieve_memory_texts(&uri, vector).await
 }
 
 #[tauri::command]
@@ -1431,16 +1528,22 @@ async fn add_memory(
 }
 
 #[tauri::command]
-async fn retrive_memory(vector: Vec<f32>) -> Result<String, ApiError> {
-    let vector = normalize_memory_vector(Some(vector), "").map_err(|error| ApiError { error })?;
-    let uri = memory_db_dir()
-        .map_err(|error| ApiError { error })?
-        .to_string_lossy()
-        .into_owned();
-    let memories = lance::retrieve_memory_texts(&uri, vector)
+async fn retrive_memory(
+    text: Option<String>,
+    vector: Option<Vec<f32>>,
+) -> Result<String, ApiError> {
+    let memories = retrieve_memory_internal(text, vector)
         .await
         .map_err(|error| ApiError { error })?;
     Ok(memories.join("\n"))
+}
+
+#[tauri::command]
+fn get_plain_memory() -> Result<String, String> {
+    if read_config()?.use_experimental_vector_memory {
+        return Ok(String::new());
+    }
+    read_plain_memory()
 }
 
 #[tauri::command]
@@ -1581,16 +1684,20 @@ async fn retrieve_memory_handler(
     State(_state): State<Arc<ApiState>>,
     Json(req): Json<RetrieveMemoryRequest>,
 ) -> Result<Json<Vec<String>>, (StatusCode, Json<ApiError>)> {
-    let vector = normalize_memory_vector(Some(req.vector), "")
-        .map_err(|error| (StatusCode::BAD_REQUEST, Json(ApiError { error })))?;
-    let uri = memory_db_dir()
-        .map_err(|error| (StatusCode::BAD_REQUEST, Json(ApiError { error })))?
-        .to_string_lossy()
-        .into_owned();
-    let memories = lance::retrieve_memory_texts(&uri, vector)
+    let memories = retrieve_memory_internal(req.text, req.vector)
         .await
         .map_err(|error| (StatusCode::BAD_REQUEST, Json(ApiError { error })))?;
     Ok(Json(memories))
+}
+
+async fn memory_backend_handler(
+    State(_state): State<Arc<ApiState>>,
+) -> Result<Json<MemoryBackendResponse>, (StatusCode, Json<ApiError>)> {
+    let config =
+        read_config().map_err(|error| (StatusCode::BAD_REQUEST, Json(ApiError { error })))?;
+    Ok(Json(MemoryBackendResponse {
+        use_experimental_vector_memory: config.use_experimental_vector_memory,
+    }))
 }
 
 async fn start_local_api() -> Result<(), String> {
@@ -1604,6 +1711,7 @@ async fn start_local_api() -> Result<(), String> {
         .route("/base/delete", post(permanently_delete_handler))
         .route("/memory/add", post(add_memory_handler))
         .route("/memory/retrieve", post(retrieve_memory_handler))
+        .route("/memory/backend", get(memory_backend_handler))
         .route("/time", get(get_time_and_date))
         .layer(CorsLayer::permissive())
         .with_state(state);
@@ -1692,6 +1800,7 @@ pub fn run() {
             get_startup_context,
             add_memory,
             retrive_memory,
+            get_plain_memory,
             check_lance_connection,
             get_time_and_date,
             set_ghost_mode,

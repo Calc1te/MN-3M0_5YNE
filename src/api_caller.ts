@@ -7,6 +7,7 @@ import { invoke } from "@tauri-apps/api/core";
 import i18n, { getCurrentLanguage } from "./i18n";
 import { getRuntimeApiKey } from "@/lib/api-key";
 import {
+  getAppConfig,
   getRuntimeLlmConfig,
   type RuntimeLlmConfig,
 } from "@/lib/app-config";
@@ -175,15 +176,26 @@ async function buildStartupLine(): Promise<string> {
 
 async function getSystemPromptWithContext(): Promise<string> {
   const language = getCurrentLanguage();
+  let base: string;
   if (cachedSystemPrompt?.language === language) {
-    return cachedSystemPrompt.content;
+    base = cachedSystemPrompt.content;
+  } else {
+    base = getSystemPrompt();
+    cachedSystemPrompt = { language, content: base };
   }
 
-  const base = getSystemPrompt();
-  const extra = await buildStartupLine();
-  const content = extra ? `${base}\n\n${extra}` : base;
-  cachedSystemPrompt = { language, content };
-  return content;
+  const [extra, plainMemory] = await Promise.all([
+    buildStartupLine(),
+    invoke<string>("get_plain_memory").catch((error: unknown) => {
+      console.warn("Failed to load plain memory:", error);
+      return "";
+    }),
+  ]);
+  const t = i18n.getFixedT(language);
+  const memoryContext = plainMemory.trim()
+    ? t("prompts.plainMemoryContext", { memory: plainMemory.trim() })
+    : "";
+  return [base, memoryContext, extra].filter(Boolean).join("\n\n");
 }
 
 function getContextCharBudget(): number {
@@ -506,6 +518,41 @@ export async function createMemoryVector(
     vector: Float32Array.from(embedding),
     content: memoryContent,
   };
+}
+
+export interface SavedMemory {
+  id: string;
+  text: string;
+  vector: number[];
+  tags: string[];
+  created_at: number;
+  updated_at: number;
+}
+
+export async function saveLongTermMemory(
+  text: string,
+  tags: string[] = [],
+  signal?: AbortSignal,
+): Promise<SavedMemory> {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    throw new Error("Memory text cannot be empty");
+  }
+  const config = await getAppConfig();
+  if (!config.Use_Experimental_Vector_Memory) {
+    return invoke<SavedMemory>("add_memory", { text: trimmed, tags });
+  }
+
+  const memory = await createMemoryVector(
+    buildMemoryEmbeddingText(trimmed, tags),
+    trimmed,
+    signal,
+  );
+  return invoke<SavedMemory>("add_memory", {
+    text: trimmed,
+    tags,
+    vector: Array.from(memory.vector),
+  });
 }
 
 export async function summarizeExitMemory(context: {
@@ -958,11 +1005,11 @@ async function normalizeToolArgs(
     }
 
     const tags = normalizeMemoryTags(args.tags);
-    const memory = await createMemoryVector(
-      buildMemoryEmbeddingText(text, tags),
-      text,
-      signal,
-    );
+    const config = await getAppConfig();
+    if (!config.Use_Experimental_Vector_Memory) {
+      return { text, tags };
+    }
+    const memory = await createMemoryVector(buildMemoryEmbeddingText(text, tags), text, signal);
     return {
       text,
       tags,
@@ -974,10 +1021,12 @@ async function normalizeToolArgs(
     if (!text) {
       throw new Error("retrieve_memory requires text");
     }
+    const config = await getAppConfig();
+    if (!config.Use_Experimental_Vector_Memory) {
+      return { text };
+    }
     const memory = await createMemoryVector(text, text, signal);
-    return {
-      vector: Array.from(memory.vector),
-    };
+    return { vector: Array.from(memory.vector) };
   }
   return args;
 }

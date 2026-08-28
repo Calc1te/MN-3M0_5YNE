@@ -12,6 +12,10 @@ const EMBEDDING_DIMS = 1024;
 
 type ToolResult = { content: Array<{ type: "text"; text: string }> };
 
+interface MemoryBackendResponse {
+  use_experimental_vector_memory: boolean;
+}
+
 interface EmbeddingResponse {
   embedding?: number[];
   object?: string;
@@ -141,6 +145,20 @@ async function callRust<T>(path: string, body: unknown): Promise<T> {
   return payload as T;
 }
 
+async function usesExperimentalVectorMemory(): Promise<boolean> {
+  const response = await fetch(`${RUST_API_BASE}/memory/backend`);
+  const text = await response.text();
+  const payload = text ? (JSON.parse(text) as unknown) : {};
+  if (!response.ok) {
+    const errorText =
+      typeof payload === "object" && payload !== null && "error" in payload
+        ? String((payload as { error: unknown }).error)
+        : `Request failed with status ${response.status}`;
+    throw new Error(errorText);
+  }
+  return (payload as MemoryBackendResponse).use_experimental_vector_memory === true;
+}
+
 function asTextResult(payload: unknown): ToolResult {
   return {
     content: [
@@ -198,7 +216,7 @@ function createServer(): McpServer {
     {
       title: "add_memory",
       description:
-        "Embed and add a text memory to the local LanceDB memory table. Text is stored once; tags are metadata and are also included in the embedding text.",
+        "Add a long-term memory. The configured backend stores it as readable plain text by default; experimental vector memory embeds it before storing.",
       inputSchema: {
         text: z.string().min(1),
         tags: z
@@ -211,12 +229,17 @@ function createServer(): McpServer {
       console.error("[mcp] add_memory:start", { textChars: text.length, tags });
       const normalizedTags = normalizeTags(tags);
       console.error("[mcp] add_memory:normalized_tags", normalizedTags);
-      const vector = await embedText(buildMemoryEmbeddingText(text, normalizedTags));
-      console.error("[mcp] add_memory:embedding_ready", { dims: vector.length });
+      const useVectorMemory = await usesExperimentalVectorMemory();
+      const vector = useVectorMemory
+        ? await embedText(buildMemoryEmbeddingText(text, normalizedTags))
+        : undefined;
+      if (vector) {
+        console.error("[mcp] add_memory:embedding_ready", { dims: vector.length });
+      }
       const result = await callRust<unknown>("/memory/add", {
         text,
         tags: normalizedTags,
-        vector,
+        ...(vector ? { vector } : {}),
       });
       console.error("[mcp] add_memory:done");
       return asTextResult(result);
@@ -227,16 +250,21 @@ function createServer(): McpServer {
     "retrieve_memory",
     {
       title: "retrieve_memory",
-      description: "Retrieve matching memories from the local LanceDB memory table.",
+      description: "Retrieve long-term memory using the configured backend.",
       inputSchema: {
         text: z.string().min(1),
       },
     },
     async ({ text }) => {
       console.error("[mcp] retrieve_memory:start", { textChars: text.length });
-      const vector = await embedText(text);
-      console.error("[mcp] retrieve_memory:embedding_ready", { dims: vector.length });
-      const result = await callRust<unknown>("/memory/retrieve", { vector });
+      const useVectorMemory = await usesExperimentalVectorMemory();
+      const vector = useVectorMemory ? await embedText(text) : undefined;
+      if (vector) {
+        console.error("[mcp] retrieve_memory:embedding_ready", { dims: vector.length });
+      }
+      const result = await callRust<unknown>("/memory/retrieve", {
+        ...(vector ? { vector } : { text }),
+      });
       console.error("[mcp] retrieve_memory:done");
       return asTextResult(result);
     },
