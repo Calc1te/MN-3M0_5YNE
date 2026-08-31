@@ -34,6 +34,22 @@ const WEBVIEW_LOG_FILE_NAME: &str = "webview.log";
 const PLAIN_MEMORY_FILE_NAME: &str = "memory.md";
 const MAX_PLAIN_MEMORY_CHARS: usize = 12_000;
 
+fn display_path(path: &Path) -> String {
+    let value = path.to_string_lossy();
+
+    #[cfg(windows)]
+    {
+        if let Some(unc_path) = value.strip_prefix(r"\\?\UNC\") {
+            return format!(r"\\{unc_path}");
+        }
+        if let Some(normal_path) = value.strip_prefix(r"\\?\") {
+            return normal_path.to_string();
+        }
+    }
+
+    value.into_owned()
+}
+
 #[derive(Clone)]
 struct ApiState;
 
@@ -470,7 +486,7 @@ fn legacy_config_paths() -> Result<Vec<PathBuf>, String> {
 fn normalize_bar_root_parent_value(value: &str) -> Result<String, String> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
-        return Ok(resolve_bar_root_parent()?.to_string_lossy().into_owned());
+        return Ok(display_path(&resolve_bar_root_parent()?));
     }
 
     let path = PathBuf::from(trimmed);
@@ -480,7 +496,7 @@ fn normalize_bar_root_parent_value(value: &str) -> Result<String, String> {
             .to_string_lossy()
             .into_owned()),
         Ok(_) | Err(_) => {
-            let fallback = resolve_bar_root_parent()?.to_string_lossy().into_owned();
+            let fallback = display_path(&resolve_bar_root_parent()?);
             log_tauri_message(format!(
                 "normalize_bar_root_parent:fallback invalid={} fallback={}",
                 trimmed, fallback
@@ -500,7 +516,7 @@ fn normalize_loaded_config(config: &mut BarConfig) -> Result<bool, String> {
         if let Ok(metadata) = fs::metadata(&path) {
             if metadata.is_dir() {
                 let canonical = fs::canonicalize(&path).unwrap_or(path);
-                let canonical_str = canonical.to_string_lossy().into_owned();
+                let canonical_str = display_path(&canonical);
                 if canonical_str != config.base_dir {
                     config.base_dir = canonical_str;
                     changed = true;
@@ -552,7 +568,7 @@ fn read_config() -> Result<BarConfig, String> {
     }
 
     let mut config = BarConfig::default();
-    config.bar_root_parent = resolve_bar_root_parent()?.to_string_lossy().into_owned();
+    config.bar_root_parent = display_path(&resolve_bar_root_parent()?);
     Ok(config)
 }
 
@@ -585,10 +601,10 @@ fn initialize_startup_context() -> Result<BarConfig, String> {
     let mut config = read_config()?;
     let previous_last = config.last_activated;
     if config.base_dir.trim().is_empty() {
-        config.base_dir = current_base_dir().to_string_lossy().into_owned();
+        config.base_dir = display_path(&current_base_dir());
     }
     if config.bar_root_parent.trim().is_empty() {
-        config.bar_root_parent = resolve_bar_root_parent()?.to_string_lossy().into_owned();
+        config.bar_root_parent = display_path(&resolve_bar_root_parent()?);
     }
 
     let updated = BarConfig {
@@ -699,7 +715,7 @@ fn add_plain_memory(text: &str, tags: &[String], created_at: i64) -> Result<Stri
 
     fs::write(&path, next)
         .map_err(|e| format!("Failed to write plain memory {}: {e}", path.display()))?;
-    Ok(path.to_string_lossy().into_owned())
+    Ok(display_path(path))
 }
 
 fn build_drink_id() -> String {
@@ -967,7 +983,7 @@ fn metadata_to_entry(
     };
 
     Ok(BaseEntry {
-        path: path.to_string_lossy().into_owned(),
+        path: display_path(path),
         name,
         is_dir: metadata.is_dir(),
         size: metadata.len(),
@@ -1233,19 +1249,19 @@ fn change_base_directory_internal(path: String) -> Result<String, String> {
     let canonical = validate_base_dir(&path)?;
 
     update_config(|mut config| {
-        config.base_dir = canonical.to_string_lossy().into_owned();
+        config.base_dir = display_path(&canonical);
         Ok(config)
     })?;
 
     set_current_base_dir(canonical.clone());
 
-    Ok(canonical.to_string_lossy().into_owned())
+    Ok(display_path(&canonical))
 }
 
 fn change_bar_root_parent_internal(path: String) -> Result<String, String> {
     let canonical = validate_base_dir(&path)?;
     let mut config = read_config()?;
-    config.bar_root_parent = canonical.to_string_lossy().into_owned();
+    config.bar_root_parent = display_path(&canonical);
 
     let next_bar_root = canonical.join(".bar");
     fs::create_dir_all(&next_bar_root).map_err(|e| {
@@ -1271,7 +1287,7 @@ fn save_app_config_internal(mut config: BarConfig) -> Result<BarConfig, String> 
     config.bar_root_parent = normalize_bar_root_parent_value(&config.bar_root_parent)?;
     if !config.base_dir.trim().is_empty() {
         let canonical = validate_base_dir(&config.base_dir)?;
-        config.base_dir = canonical.to_string_lossy().into_owned();
+        config.base_dir = display_path(&canonical);
     }
     if !matches!(
         config.dialog_typing_speed.as_str(),

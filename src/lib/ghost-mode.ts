@@ -156,7 +156,10 @@ export const stopGhostModeRecovery = () => {
   }
 };
 
-export const shouldUseGhostModeRecovery = isTauriApp && isMacOS;
+// Windows can keep the native window in click-through mode when a route is
+// mounted beneath an already stationary cursor, so mouseenter alone is not
+// reliable there either.
+export const shouldUseGhostModeRecovery = isTauriApp && (isMacOS || isWindows);
 
 export const ghostModeRegionProps = {
   "data-ghost-click-region": "true",

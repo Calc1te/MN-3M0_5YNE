@@ -139,6 +139,7 @@ export default function InitialSetup({
     (step === "eula" && isEulaReady) ||
     (step === "bar" && Boolean(config.Bar_Root_Parent.trim())) ||
     (step === "base" && Boolean(config.Base_Dir.trim())) ||
+    step === "memory" ||
     (step === "api" &&
       Boolean(
         config.API_Key.trim() &&
