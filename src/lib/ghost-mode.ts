@@ -1,171 +1,165 @@
 import { invoke } from "@tauri-apps/api/core";
+import {
+  cursorPosition,
+  getCurrentWindow,
+  primaryMonitor,
+} from "@tauri-apps/api/window";
 
 export const GHOST_CLICK_REGION_SELECTOR = "[data-ghost-click-region='true']";
 
-const IS_WINDOWS =
+const isTauriApp =
+  typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+const appWindow = isTauriApp ? getCurrentWindow() : null;
+const isMacOS =
   typeof navigator !== "undefined" &&
-  /Windows/i.test(navigator.userAgent);
+  /(Mac|iPhone|iPad|iPod)/i.test(navigator.userAgent);
+const isWindows =
+  typeof navigator !== "undefined" && /Windows/i.test(navigator.userAgent);
 
-let windowsRegionHoverDepth = 0;
-let windowsContextMenuOpen = false;
-let lastIgnoreState: boolean | null = null;
-let windowsLeaveTimeout: number | null = null;
-let windowsContextMenuIntentUntil = 0;
+let currentIgnoreState: boolean | null = null;
+let recoveryIntervalId: number | null = null;
+let recoveryPollInFlight = false;
+let ghostModeCommandQueue: Promise<void> = Promise.resolve();
+const ghostModeListeners = new Set<(ignore: boolean | null) => void>();
 
-function debugGhostMode(event: string, detail?: Record<string, unknown>) {
-  if (typeof console === "undefined") {
-    return;
+function notifyGhostModeListeners() {
+  for (const listener of ghostModeListeners) {
+    listener(currentIgnoreState);
+  }
+}
+
+export function getGhostModeIgnoreState(): boolean | null {
+  return currentIgnoreState;
+}
+
+export function onGhostModeChange(
+  listener: (ignore: boolean | null) => void,
+): () => void {
+  ghostModeListeners.add(listener);
+  return () => {
+    ghostModeListeners.delete(listener);
+  };
+}
+
+const setGhostMode = (ignore: boolean): Promise<void> => {
+  if (!isTauriApp) {
+    return Promise.resolve();
   }
 
-  console.debug("[ghost-mode]", event, {
-    platform: IS_WINDOWS ? "windows" : "non-windows",
-    hoverDepth: windowsRegionHoverDepth,
-    contextMenuOpen: windowsContextMenuOpen,
-    contextMenuIntentActive: Date.now() < windowsContextMenuIntentUntil,
-    ignoreState: lastIgnoreState,
-    ...detail,
+  if (currentIgnoreState === ignore) {
+    return ghostModeCommandQueue;
+  }
+  currentIgnoreState = ignore;
+  notifyGhostModeListeners();
+
+  // Keep native updates ordered. Mouse enter/leave and the recovery poll can
+  // otherwise issue opposite requests before macOS applies the first one.
+  ghostModeCommandQueue = ghostModeCommandQueue.then(async () => {
+    try {
+      await invoke("set_ghost_mode", { ignore });
+    } catch (error) {
+      if (currentIgnoreState === ignore) {
+        currentIgnoreState = null;
+        notifyGhostModeListeners();
+      }
+      console.warn("Failed to update click-through state:", error);
+    }
   });
-}
 
-function clearWindowsLeaveTimeout() {
-  if (windowsLeaveTimeout !== null && typeof window !== "undefined") {
-    window.clearTimeout(windowsLeaveTimeout);
-    windowsLeaveTimeout = null;
-  }
-}
-
-function setGhostMode(ignore: boolean) {
-  if (lastIgnoreState === ignore) {
-    debugGhostMode("setGhostMode:skip", { ignore });
-    return;
-  }
-
-  lastIgnoreState = ignore;
-  debugGhostMode("setGhostMode:apply", { ignore });
-  void invoke("set_ghost_mode", { ignore });
-}
-
-function syncWindowsGhostMode() {
-  debugGhostMode("syncWindowsGhostMode");
-  const keepClickable =
-    windowsContextMenuOpen ||
-    windowsRegionHoverDepth > 0 ||
-    Date.now() < windowsContextMenuIntentUntil;
-  setGhostMode(!keepClickable);
-}
+  return ghostModeCommandQueue;
+};
 
 export const enableClick = () => {
-  debugGhostMode("enableClick");
-  setGhostMode(false);
+  void setGhostMode(false);
 };
 
 export const disableClick = () => {
-  debugGhostMode("disableClick");
-  setGhostMode(true);
+  void setGhostMode(true);
 };
 
-export function isWindowsGhostModePlatform() {
-  return IS_WINDOWS;
+async function isCursorOverClickableRegion(): Promise<boolean> {
+  if (!appWindow) {
+    return false;
+  }
+
+  const [cursor, outerPosition, windowScaleFactor, primary] = await Promise.all([
+    cursorPosition(),
+    appWindow.outerPosition(),
+    appWindow.scaleFactor(),
+    primaryMonitor(),
+  ]);
+
+  // macOS reports the global cursor using the primary monitor scale factor;
+  // Windows reports both values in physical pixels. Convert both to local
+  // CSS pixels before hit-testing.
+  const cursorScaleFactor = isMacOS
+    ? (primary?.scaleFactor ?? windowScaleFactor)
+    : windowScaleFactor;
+  const windowPositionScaleFactor = windowScaleFactor;
+  const localX =
+    cursor.x / cursorScaleFactor - outerPosition.x / windowPositionScaleFactor;
+  const localY =
+    cursor.y / cursorScaleFactor - outerPosition.y / windowPositionScaleFactor;
+
+  if (
+    localX < 0 ||
+    localY < 0 ||
+    localX > window.innerWidth ||
+    localY > window.innerHeight
+  ) {
+    return false;
+  }
+
+  const element = document.elementFromPoint(localX, localY);
+  return Boolean(element?.closest(GHOST_CLICK_REGION_SELECTOR));
 }
 
-export function reconcileGhostModeFromPoint(x: number, y: number) {
-  if (!IS_WINDOWS || typeof document === "undefined") {
+async function isDevtoolsOpen(): Promise<boolean> {
+  if (!isTauriApp || !import.meta.env.DEV) {
+    return false;
+  }
+
+  return invoke<boolean>("is_devtools_open");
+}
+
+export const startGhostModeRecovery = () => {
+  if ((!isMacOS && !isWindows) || recoveryIntervalId !== null) {
     return;
   }
 
-  const hoveredGhostRegion = document
-    .elementFromPoint(x, y)
-    ?.closest(GHOST_CLICK_REGION_SELECTOR);
-  debugGhostMode("reconcileGhostModeFromPoint", {
-    x,
-    y,
-    hoveredGhostRegion: Boolean(hoveredGhostRegion),
-  });
-  windowsRegionHoverDepth = hoveredGhostRegion ? 1 : 0;
-  syncWindowsGhostMode();
-}
-
-function handleGhostRegionEnter() {
-  if (!IS_WINDOWS) {
-    enableClick();
-    return;
-  }
-
-  clearWindowsLeaveTimeout();
-  windowsRegionHoverDepth += 1;
-  debugGhostMode("handleGhostRegionEnter");
-  syncWindowsGhostMode();
-}
-
-function handleGhostRegionLeave() {
-  if (!IS_WINDOWS) {
-    disableClick();
-    return;
-  }
-
-  windowsRegionHoverDepth = Math.max(0, windowsRegionHoverDepth - 1);
-  clearWindowsLeaveTimeout();
-  debugGhostMode("handleGhostRegionLeave:schedule");
-  windowsLeaveTimeout = window.setTimeout(() => {
-    windowsLeaveTimeout = null;
-    debugGhostMode("handleGhostRegionLeave:flush");
-    syncWindowsGhostMode();
-  }, 160);
-}
-
-export function handleGhostContextMenuOpen() {
-  if (!IS_WINDOWS) {
-    enableClick();
-    return;
-  }
-
-  clearWindowsLeaveTimeout();
-  windowsContextMenuIntentUntil = 0;
-  windowsContextMenuOpen = true;
-  debugGhostMode("handleGhostContextMenuOpen");
-  syncWindowsGhostMode();
-}
-
-export function handleGhostContextMenuIntent() {
-  if (!IS_WINDOWS) {
-    return;
-  }
-
-  clearWindowsLeaveTimeout();
-  windowsContextMenuIntentUntil = Date.now() + 300;
-  debugGhostMode("handleGhostContextMenuIntent");
-  syncWindowsGhostMode();
-}
-
-export function handleGhostContextMenuClose(pointer?: { x: number; y: number }) {
-  debugGhostMode("handleGhostContextMenuClose", { pointer });
-  if (!IS_WINDOWS) {
-    if (pointer) {
-      const target = document.elementFromPoint(pointer.x, pointer.y);
-      if (target?.closest(GHOST_CLICK_REGION_SELECTOR)) {
-        enableClick();
-      } else {
-        disableClick();
-      }
+  const poll = () => {
+    if (recoveryPollInFlight) {
       return;
     }
+    recoveryPollInFlight = true;
 
-    disableClick();
-    return;
-  }
+    void Promise.all([isCursorOverClickableRegion(), isDevtoolsOpen()])
+      .then(([isOverClickableRegion, devtoolsOpen]) =>
+        setGhostMode(devtoolsOpen ? false : !isOverClickableRegion),
+      )
+      .catch(() => {
+        // Ignore transient cursor query failures.
+      })
+      .finally(() => {
+        recoveryPollInFlight = false;
+      });
+  };
 
-  clearWindowsLeaveTimeout();
-  windowsContextMenuOpen = false;
-  windowsContextMenuIntentUntil = 0;
-  if (pointer) {
-    reconcileGhostModeFromPoint(pointer.x, pointer.y);
-    return;
+  poll();
+  recoveryIntervalId = window.setInterval(poll, 120);
+};
+
+export const stopGhostModeRecovery = () => {
+  if (recoveryIntervalId !== null) {
+    window.clearInterval(recoveryIntervalId);
+    recoveryIntervalId = null;
   }
-  syncWindowsGhostMode();
-}
+};
+
+export const shouldUseGhostModeRecovery = isTauriApp && isMacOS;
 
 export const ghostModeRegionProps = {
   "data-ghost-click-region": "true",
-  onMouseEnter: handleGhostRegionEnter,
-  onMouseLeave: handleGhostRegionLeave,
+  onMouseEnter: enableClick,
+  onMouseLeave: disableClick,
 } as const;

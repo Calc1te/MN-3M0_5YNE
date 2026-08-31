@@ -1,7 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState, type ReactNode } from "react";
-import { cursorPosition, getCurrentWindow } from "@tauri-apps/api/window";
 import {
   BrowserRouter as Router,
   Routes,
@@ -13,22 +12,24 @@ import "./App.css";
 import Menu from "./components/views/menu.tsx";
 import About from "./components/views/settings/about.tsx";
 import BartenderMain from "./components/views/bartender_main.tsx";
-// import DebugMenu from "./components/debug.tsx";
 import InitialSetup from "./components/views/initial_setup.tsx";
 import SettingsPanel from "./components/views/settings/panel.tsx";
 import {
   disableClick,
   enableClick,
   ghostModeRegionProps,
-  isWindowsGhostModePlatform,
-  reconcileGhostModeFromPoint,
+  shouldUseGhostModeRecovery,
+  startGhostModeRecovery,
+  stopGhostModeRecovery,
 } from "@/lib/ghost-mode";
 import {
   getInitialSetupStatus,
+  onAppConfigChange,
   simulateFirstInstall,
   type AppConfig,
 } from "@/lib/app-config";
 import { getUIFontClass, resolveAppLanguage } from "@/lib/language";
+import DebugMenu from "./components/debug.tsx";
 
 function PanelTransition({ children }: { children: ReactNode }) {
   return (
@@ -55,9 +56,11 @@ function SolidClickSurface({ children }: { children: ReactNode }) {
 function AppRoutes({
   showSetupCompletePrompt,
   onSetupCompletePromptShown,
+  developerMode,
 }: {
   showSetupCompletePrompt: boolean;
   onSetupCompletePromptShown: () => void;
+  developerMode: boolean;
 }) {
   const location = useLocation();
 
@@ -70,11 +73,11 @@ function AppRoutes({
           element={
             <PanelTransition>
               <main className="container" color="none">
+                {developerMode && <DebugMenu />}
                 <BartenderMain
                   showSetupCompletePrompt={showSetupCompletePrompt}
                   onSetupCompletePromptShown={onSetupCompletePromptShown}
                 />
-                {/* <DebugMenu /> */}
               </main>
             </PanelTransition>
           }
@@ -117,35 +120,25 @@ function App() {
   const [showSetupCompletePrompt, setShowSetupCompletePrompt] = useState(false);
 
   useEffect(() => {
-    const handleWindowMouseEnter = (event: MouseEvent) => {
-      console.debug("[ghost-mode]", "window:mouseenter", {
-        clientX: event.clientX,
-        clientY: event.clientY,
-        isWindows: isWindowsGhostModePlatform(),
-      });
+    if (shouldUseGhostModeRecovery) {
+      // On macOS a click-through window cannot rely on DOM mouseenter events
+      // to make an interactive region clickable again.
+      startGhostModeRecovery();
+    }
 
-      if (isWindowsGhostModePlatform()) {
-        reconcileGhostModeFromPoint(event.clientX, event.clientY);
+    const handleWindowMouseEnter = () => {
+      if (shouldUseGhostModeRecovery) {
         return;
       }
-
       disableClick();
     };
     const handleWindowDeactivation = () => {
-      console.debug("[ghost-mode]", "window:blur");
-      if (isWindowsGhostModePlatform()) {
-        return;
+      if (!shouldUseGhostModeRecovery) {
+        enableClick();
       }
-      enableClick();
     };
     const handleVisibilityChange = () => {
-      console.debug("[ghost-mode]", "document:visibilitychange", {
-        hidden: document.hidden,
-      });
-      if (isWindowsGhostModePlatform()) {
-        return;
-      }
-      if (document.hidden) {
+      if (document.hidden && !shouldUseGhostModeRecovery) {
         enableClick();
       }
     };
@@ -153,97 +146,8 @@ function App() {
     window.addEventListener("mouseenter", handleWindowMouseEnter);
     window.addEventListener("blur", handleWindowDeactivation);
     document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    let disposed = false;
-    let ghostPollTimer: number | null = null;
-    let pollInFlight = false;
-    let lastSample:
-      | {
-          insideWindow: boolean;
-          clientX: number;
-          clientY: number;
-        }
-      | null = null;
-
-    if (isWindowsGhostModePlatform()) {
-      const currentWindow = getCurrentWindow();
-
-      const pollGhostMode = async () => {
-        if (disposed || pollInFlight) {
-          return;
-        }
-
-        pollInFlight = true;
-        try {
-          const [pointer, outerPosition, scale] = await Promise.all([
-            cursorPosition(),
-            currentWindow.outerPosition(),
-            currentWindow.scaleFactor(),
-          ]);
-          if (disposed) {
-            return;
-          }
-
-          const resolvedScale = scale || window.devicePixelRatio || 1;
-          const clientX = (pointer.x - outerPosition.x) / resolvedScale;
-          const clientY = (pointer.y - outerPosition.y) / resolvedScale;
-          const insideWindow =
-            clientX >= 0 &&
-            clientY >= 0 &&
-            clientX <= window.innerWidth &&
-            clientY <= window.innerHeight;
-
-          const roundedSample = {
-            insideWindow,
-            clientX: Math.round(clientX),
-            clientY: Math.round(clientY),
-          };
-
-          const sampleChanged =
-            !lastSample ||
-            lastSample.insideWindow !== roundedSample.insideWindow ||
-            lastSample.clientX !== roundedSample.clientX ||
-            lastSample.clientY !== roundedSample.clientY;
-
-          if (sampleChanged) {
-            console.debug("[ghost-mode]", "windows:poll", {
-              pointerX: pointer.x,
-              pointerY: pointer.y,
-              outerX: outerPosition.x,
-              outerY: outerPosition.y,
-              clientX: roundedSample.clientX,
-              clientY: roundedSample.clientY,
-              insideWindow,
-              innerWidth: window.innerWidth,
-              innerHeight: window.innerHeight,
-              scale: resolvedScale,
-            });
-            lastSample = roundedSample;
-          }
-
-          if (insideWindow) {
-            reconcileGhostModeFromPoint(clientX, clientY);
-          } else {
-            disableClick();
-          }
-        } catch (error) {
-          console.debug("[ghost-mode]", "windows:poll:error", error);
-        } finally {
-          pollInFlight = false;
-        }
-      };
-
-      void pollGhostMode();
-      ghostPollTimer = window.setInterval(() => {
-        void pollGhostMode();
-      }, 120);
-    }
-
     return () => {
-      disposed = true;
-      if (ghostPollTimer !== null) {
-        window.clearInterval(ghostPollTimer);
-      }
+      stopGhostModeRecovery();
       window.removeEventListener("mouseenter", handleWindowMouseEnter);
       window.removeEventListener("blur", handleWindowDeactivation);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
@@ -260,6 +164,12 @@ function App() {
       document.body.classList.remove("font-ui-en", "font-ui-cn", "font-ui-jp");
     };
   }, [resolvedLanguage, uiFontClass]);
+
+  useEffect(() => {
+    return onAppConfigChange((config) => {
+      setSetupState((current) => ({ ...current, config }));
+    });
+  }, []);
 
   useEffect(() => {
     void getInitialSetupStatus()
@@ -301,6 +211,7 @@ function App() {
         <Menu>
           <div className="min-h-screen w-full">
             <AppRoutes
+              developerMode={setupState.config?.Developer_Mode ?? false}
               showSetupCompletePrompt={showSetupCompletePrompt}
               onSetupCompletePromptShown={() =>
                 setShowSetupCompletePrompt(false)

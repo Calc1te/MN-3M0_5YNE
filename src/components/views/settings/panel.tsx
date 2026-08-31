@@ -8,7 +8,7 @@ import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import {
   checkChatModelConnection,
   checkEmbeddingModelConnection,
-  createMemoryVector,
+  saveLongTermMemory,
   summarizeExitMemory,
 } from "@/api_caller";
 import DirectorySelector from "@/components/directory-selector";
@@ -142,6 +142,11 @@ export default function SettingsPanel() {
       return;
     }
 
+    if (!config.Use_Experimental_Vector_Memory) {
+      setLanceStatus("unknown");
+      return;
+    }
+
     setLanceStatus("checking");
     void invoke<{ online: boolean }>("check_lance_connection")
       .then((result) => {
@@ -151,7 +156,7 @@ export default function SettingsPanel() {
         console.error("Failed to check lance connection:", error);
         setLanceStatus("offline");
       });
-  }, [config.Bar_Root_Parent]);
+  }, [config.Bar_Root_Parent, config.Use_Experimental_Vector_Memory]);
 
   useEffect(() => {
     void isEnabled()
@@ -256,17 +261,8 @@ export default function SettingsPanel() {
         console.info("[settings] exit:memory_summary:done", {
           summaryLength: summary.length,
         });
-        console.info("[settings] exit:memory_embedding:start");
-        const memory = await createMemoryVector(summary, summary);
-        console.info("[settings] exit:memory_embedding:done", {
-          vectorLength: memory.vector.length,
-        });
         console.info("[settings] exit:add_memory:start");
-        await invoke("add_memory", {
-          text: summary,
-          vector: Array.from(memory.vector),
-          tags: ["exit", "session_summary"],
-        });
+        await saveLongTermMemory(summary, ["exit", "session_summary"]);
         console.info("[settings] exit:add_memory:done");
       }
 
@@ -334,20 +330,29 @@ export default function SettingsPanel() {
     const runtimeConfig = resolveRuntimeLlmConfig(config);
     setIsCheckingModels(true);
     setChatModelStatus("checking");
-    setEmbeddingModelStatus("checking");
+    setEmbeddingModelStatus(
+      config.Use_Experimental_Vector_Memory ? "checking" : "unknown",
+    );
     setConfigStatus(null);
 
     const [chatResult, embeddingResult] = await Promise.allSettled([
       checkChatModelConnection(runtimeConfig),
-      checkEmbeddingModelConnection(runtimeConfig),
+      config.Use_Experimental_Vector_Memory
+        ? checkEmbeddingModelConnection(runtimeConfig)
+        : Promise.resolve(),
     ]);
 
     setChatModelStatus(chatResult.status === "fulfilled" ? "online" : "offline");
-    setEmbeddingModelStatus(
-      embeddingResult.status === "fulfilled" ? "online" : "offline",
-    );
+    if (config.Use_Experimental_Vector_Memory) {
+      setEmbeddingModelStatus(
+        embeddingResult.status === "fulfilled" ? "online" : "offline",
+      );
+    }
 
-    const failure = [chatResult, embeddingResult].find(
+    const resultsToCheck = config.Use_Experimental_Vector_Memory
+      ? [chatResult, embeddingResult]
+      : [chatResult];
+    const failure = resultsToCheck.find(
       (result): result is PromiseRejectedResult => result.status === "rejected",
     );
     setConfigStatus(
@@ -451,6 +456,40 @@ export default function SettingsPanel() {
               font="normal"
             />
             <span>{t("ui.alwaysOnTop")}</span>
+          </label>
+        </section>
+
+        <section className="flex w-full max-w-xl flex-col gap-3">
+          <label className="flex items-start gap-3 text-sm">
+            <Checkbox
+              checked={config.Use_Experimental_Vector_Memory}
+              onCheckedChange={(checked) =>
+                updateConfig({ Use_Experimental_Vector_Memory: checked === true })
+              }
+              disabled={isExiting}
+              font="normal"
+            />
+            <span className="flex flex-col gap-1">
+              <span>{t("ui.experimentalVectorMemory")}</span>
+              <span className="text-xs text-white/70">
+                {t("ui.plainMemoryDefaultHint")}
+              </span>
+              <span className="text-xs text-yellow-500/90">{t("ui.memoryWarning")}</span>
+            </span>
+          </label>
+        </section>
+
+        <section className="flex w-full max-w-xl flex-col gap-3">
+          <label className="flex items-center gap-3 text-sm">
+            <Checkbox
+              checked={config.Developer_Mode}
+              onCheckedChange={(checked) =>
+                updateConfig({ Developer_Mode: checked === true })
+              }
+              disabled={isExiting}
+              font="normal"
+            />
+            <span>{t("ui.developerMode")}</span>
           </label>
         </section>
 
@@ -570,22 +609,26 @@ export default function SettingsPanel() {
                 placeholder={t("ui.chatModelPlaceholder")}
                 font={usesPixelFont ? "normal" : undefined}
               />
-              <Input
-                value={config.Embedding_Base_URL}
-                onChange={(event) =>
-                  updateConfig({ Embedding_Base_URL: event.target.value })
-                }
-                placeholder={t("ui.embeddingBaseUrlPlaceholder")}
-                font={usesPixelFont ? "normal" : undefined}
-              />
-              <Input
-                value={config.Embedding_Model}
-                onChange={(event) =>
-                  updateConfig({ Embedding_Model: event.target.value })
-                }
-                placeholder={t("ui.embeddingModelPlaceholder")}
-                font={usesPixelFont ? "normal" : undefined}
-              />
+              {config.Use_Experimental_Vector_Memory && (
+                <>
+                  <Input
+                    value={config.Embedding_Base_URL}
+                    onChange={(event) =>
+                      updateConfig({ Embedding_Base_URL: event.target.value })
+                    }
+                    placeholder={t("ui.embeddingBaseUrlPlaceholder")}
+                    font={usesPixelFont ? "normal" : undefined}
+                  />
+                  <Input
+                    value={config.Embedding_Model}
+                    onChange={(event) =>
+                      updateConfig({ Embedding_Model: event.target.value })
+                    }
+                    placeholder={t("ui.embeddingModelPlaceholder")}
+                    font={usesPixelFont ? "normal" : undefined}
+                  />
+                </>
+              )}
             </>
           )}
 
@@ -599,18 +642,22 @@ export default function SettingsPanel() {
                 {getStatusLabel(chatModelStatus)}
               </span>
             </div>
-            <div className="flex items-center justify-between gap-3">
-              <span>{t("ui.embeddingModelConnection")}</span>
-              <span className={getStatusClassName(embeddingModelStatus)}>
-                {getStatusLabel(embeddingModelStatus)}
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-3">
-              <span>{t("ui.lanceConnection")}</span>
-              <span className={getStatusClassName(lanceStatus)}>
-                {getStatusLabel(lanceStatus)}
-              </span>
-            </div>
+            {config.Use_Experimental_Vector_Memory && (
+              <>
+                <div className="flex items-center justify-between gap-3">
+                  <span>{t("ui.embeddingModelConnection")}</span>
+                  <span className={getStatusClassName(embeddingModelStatus)}>
+                    {getStatusLabel(embeddingModelStatus)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span>{t("ui.lanceConnection")}</span>
+                  <span className={getStatusClassName(lanceStatus)}>
+                    {getStatusLabel(lanceStatus)}
+                  </span>
+                </div>
+              </>
+            )}
           </div>
           <div className="flex items-center gap-3">
             {!isFriendMode && (

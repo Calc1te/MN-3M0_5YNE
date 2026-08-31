@@ -5,9 +5,9 @@ export type DialogTypingSpeed = (typeof DIALOG_TYPING_SPEED_VALUES)[number];
 export const DEFAULT_DIALOG_TYPING_SPEED: DialogTypingSpeed = "fast";
 
 const DIALOG_TYPING_INTERVALS: Record<DialogTypingSpeed, number> = {
-  slow: 72,
-  medium: 52,
-  fast: 34,
+  slow: 100,
+  medium: 75,
+  fast: 45,
 };
 
 export function isDialogTypingSpeed(value: string): value is DialogTypingSpeed {

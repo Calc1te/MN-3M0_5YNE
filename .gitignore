@@ -27,8 +27,11 @@ dist-ssr
 .bar/
 
 .env
+temp
+raw/
 
 protoc/
+profile-logs/
 
 release-friend/
 **/target-friend/

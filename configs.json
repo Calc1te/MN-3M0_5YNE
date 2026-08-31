@@ -8,6 +8,7 @@
   "Chat_Model": "",
   "Embedding_Base_URL": "",
   "Embedding_Model": "",
+  "Use_Experimental_Vector_Memory": false,
   "Setup_Completed": true,
   "Remember_On_Exit": false,
   "Always_On_Top": true,
