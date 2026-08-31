@@ -17,6 +17,7 @@ import {
 import PDialog from "@/components/P_dialog";
 import PFileDropTarget from "@/components/P_file_drop_target";
 import type { DrinkActionEvent } from "@/components/bar_counter_drink_menu";
+import { Textarea } from "@/components/ui/8bit/textarea";
 import UserInput from "@/components/user_input";
 import {
   buildDefaultAppConfig,
@@ -69,6 +70,7 @@ export default function BartenderMain({
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isReplyComplete, setIsReplyComplete] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [setupGuideStep, setSetupGuideStep] = useState<number | null>(null);
   const historyRef = useRef(history);
   const isLoadingRef = useRef(isLoading);
   const configRef = useRef(config);
@@ -137,8 +139,25 @@ export default function BartenderMain({
     setToolStatus("");
     setError(null);
     setIsSpeaking(false);
+    setSetupGuideStep(0);
     onSetupCompletePromptShown?.();
   }, [onSetupCompletePromptShown, showSetupCompletePrompt, t]);
+
+  const setupGuideSteps = [
+    t("setup.guideDragP"),
+    t("setup.guideOpenSettings"),
+    t("setup.guideDropFiles"),
+    t("setup.guideDrinkActions"),
+  ];
+
+  const handleSetupGuideClick = () => {
+    setSetupGuideStep((current) => {
+      if (current === null || current >= setupGuideSteps.length - 1) {
+        return null;
+      }
+      return current + 1;
+    });
+  };
 
   const clearIdleTimer = () => {
     if (idleTimerRef.current !== null) {
@@ -638,6 +657,29 @@ export default function BartenderMain({
           chatFontClass,
         )}
       />
+      {setupGuideStep !== null && (
+        <div {...ghostModeRegionProps} className="w-full">
+          <Textarea
+            value={setupGuideSteps[setupGuideStep]}
+            readOnly
+            rows={5}
+            font="normal"
+            aria-label={t("setup.guideLabel")}
+            title={t("setup.guideClickHint")}
+            onClick={handleSetupGuideClick}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                handleSetupGuideClick();
+              }
+            }}
+            className={cn(
+              "w-full cursor-pointer resize-none bg-foreground text-background",
+              chatFontClass,
+            )}
+          />
+        </div>
+      )}
       {toolStatus && (
         <div
           className={cn(
