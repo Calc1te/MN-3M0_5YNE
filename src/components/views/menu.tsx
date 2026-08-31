@@ -5,13 +5,18 @@ import {
   ContextMenuTrigger
 } from "@/components/ui/8bit/context-menu.tsx";
 import {
+  disableClick,
+  enableClick,
   GHOST_CLICK_REGION_SELECTOR,
-  handleGhostContextMenuClose,
-  handleGhostContextMenuIntent,
-  handleGhostContextMenuOpen,
-  isWindowsGhostModePlatform,
+  ghostModeRegionProps,
 } from "@/lib/ghost-mode";
-import { useRef, type PointerEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 
@@ -24,37 +29,73 @@ export default function Menu({ children }: MenuProps) {
   const navigate = useNavigate();
 
   const pointerRef = useRef({ x: 0, y: 0 });
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const suppressContextMenuUntilRef = useRef(0);
+  const [isOpen, setIsOpen] = useState(false);
+  const [menuInstance, setMenuInstance] = useState(0);
 
-  const rememberPointer = (event: PointerEvent<HTMLElement>) => {
+  const rememberPointer = (event: ReactPointerEvent<HTMLElement>) => {
     pointerRef.current = { x: event.clientX, y: event.clientY };
-    console.debug("[ghost-mode]", "menu:rememberPointer", pointerRef.current);
   };
 
   const handleOpenChange = (nextOpen: boolean) => {
-    console.debug("[ghost-mode]", "menu:openChange", {
-      nextOpen,
-      pointer: pointerRef.current,
-      isWindows: isWindowsGhostModePlatform(),
-    });
-
+    setIsOpen(nextOpen);
     if (nextOpen) {
-      handleGhostContextMenuOpen();
+      enableClick();
+      return;
+    }
+    // set back pointer status of original position
+    window.requestAnimationFrame(() => {
+      const { x, y } = pointerRef.current;
+      const target = document.elementFromPoint(x, y);
+      if (target?.closest(GHOST_CLICK_REGION_SELECTOR)) {
+        enableClick();
+      } else {
+        disableClick();
+      }
+    });
+  };
+
+  useEffect(() => {
+    const suppressReopen = (event: globalThis.MouseEvent) => {
+      if (performance.now() > suppressContextMenuUntilRef.current) {
+        return;
+      }
+      suppressContextMenuUntilRef.current = 0;
+      event.preventDefault();
+      event.stopPropagation();
+    };
+
+    document.addEventListener("contextmenu", suppressReopen, true);
+    return () => {
+      document.removeEventListener("contextmenu", suppressReopen, true);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) {
       return;
     }
 
-    window.requestAnimationFrame(() => {
-      const pointer = pointerRef.current;
-      if (isWindowsGhostModePlatform()) {
-        handleGhostContextMenuClose(pointer);
+    const closeFromOutsidePointer = (event: globalThis.PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Node && contentRef.current?.contains(target)) {
         return;
       }
 
-      const target = document.elementFromPoint(pointer.x, pointer.y);
-      handleGhostContextMenuClose(
-        target?.closest(GHOST_CLICK_REGION_SELECTOR) ? pointer : undefined,
-      );
-    });
-  };
+      pointerRef.current = { x: event.clientX, y: event.clientY };
+      if (event.button === 2) {
+        suppressContextMenuUntilRef.current = performance.now() + 500;
+      }
+      setMenuInstance((current) => current + 1);
+      handleOpenChange(false);
+    };
+
+    document.addEventListener("pointerdown", closeFromOutsidePointer, true);
+    return () => {
+      document.removeEventListener("pointerdown", closeFromOutsidePointer, true);
+    };
+  }, [isOpen]);
 
   const handleSetting = () => {
     navigate("/settings");
@@ -64,21 +105,20 @@ export default function Menu({ children }: MenuProps) {
   };
 
   return (
-    <ContextMenu onOpenChange={handleOpenChange}>
+    <ContextMenu key={menuInstance} onOpenChange={handleOpenChange}>
       <ContextMenuTrigger asChild>
         <div
           className="min-h-screen w-full"
+          data-ghost-click-region={isOpen ? "true" : undefined}
           onPointerDown={rememberPointer}
           onPointerMove={rememberPointer}
-          onContextMenuCapture={() => {
-            console.debug("[ghost-mode]", "menu:contextmenu-intent");
-            handleGhostContextMenuIntent();
-          }}
         >
           {children}
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent
+        ref={contentRef}
+        {...ghostModeRegionProps}
         onPointerDown={rememberPointer}
         onPointerMove={rememberPointer}
       >

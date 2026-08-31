@@ -166,7 +166,10 @@ for (const entry of envArgs) {
   }
 
   const key = resolveEnvKey(entry.slice(0, equalsIndex));
-  const value = entry.slice(equalsIndex + 1);
+  let value = entry.slice(equalsIndex + 1);
+  if (key.toUpperCase() === "CARGO_TARGET_DIR" && !path.isAbsolute(value)) {
+    value = path.resolve(repoRoot, value);
+  }
   env[key] = value;
 }
 

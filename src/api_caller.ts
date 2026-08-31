@@ -7,9 +7,15 @@ import { invoke } from "@tauri-apps/api/core";
 import i18n, { getCurrentLanguage } from "./i18n";
 import { getRuntimeApiKey } from "@/lib/api-key";
 import {
+  getAppConfig,
   getRuntimeLlmConfig,
   type RuntimeLlmConfig,
 } from "@/lib/app-config";
+import {
+  recordMcpCallFinish,
+  recordMcpCallStart,
+} from "@/lib/mcp-call-history";
+import { beginLlmRequest, trackLlmRequest } from "@/lib/llm-request-state";
 
 export type Role = "user" | "assistant" | "system";
 
@@ -41,6 +47,16 @@ export interface memoryEntry {
 }
 
 const CHAT_COMPLETIONS_SUFFIX = "/chat/completions";
+const DEFAULT_CONTEXT_CHAR_BUDGET = 48_000;
+const MESSAGE_OVERHEAD_CHARS = 24;
+export const MAX_BARTENDER_TOOL_ROUNDS = 4;
+
+let cachedSystemPrompt:
+  | {
+      language: string;
+      content: string;
+    }
+  | null = null;
 
 function normalizeChatCompletionsBaseUrl(baseUrl?: string): string | undefined {
   if (!baseUrl) {
@@ -119,7 +135,8 @@ async function resolveLlmConfig(
 
 function getSystemPrompt(): string {
   const language = getCurrentLanguage();
-  return i18n.getFixedT(language)("prompts.system");
+  const t = i18n.getFixedT(language);
+  return `${t("prompts.system")}\n\n${t("prompts.toolWorkflow")}`;
 }
 
 interface StartupContext {
@@ -158,25 +175,92 @@ async function buildStartupLine(): Promise<string> {
 }
 
 async function getSystemPromptWithContext(): Promise<string> {
-  const base = getSystemPrompt();
-  const extra = await buildStartupLine();
-  return extra ? `${base}\n\n${extra}` : base;
+  const language = getCurrentLanguage();
+  let base: string;
+  if (cachedSystemPrompt?.language === language) {
+    base = cachedSystemPrompt.content;
+  } else {
+    base = getSystemPrompt();
+    cachedSystemPrompt = { language, content: base };
+  }
+
+  const [extra, plainMemory] = await Promise.all([
+    buildStartupLine(),
+    invoke<string>("get_plain_memory").catch((error: unknown) => {
+      console.warn("Failed to load plain memory:", error);
+      return "";
+    }),
+  ]);
+  const t = i18n.getFixedT(language);
+  const memoryContext = plainMemory.trim()
+    ? t("prompts.plainMemoryContext", { memory: plainMemory.trim() })
+    : "";
+  return [base, memoryContext, extra].filter(Boolean).join("\n\n");
+}
+
+function getContextCharBudget(): number {
+  const raw = import.meta.env.VITE_CHAT_CONTEXT_CHAR_BUDGET;
+  const parsed = typeof raw === "string" ? Number.parseInt(raw, 10) : NaN;
+  return Number.isFinite(parsed) && parsed > 0
+    ? parsed
+    : DEFAULT_CONTEXT_CHAR_BUDGET;
+}
+
+function countMessageChars(message: ChatCompletionMessageParam): number {
+  const content = message.content;
+  const contentChars =
+    typeof content === "string" ? content.length : JSON.stringify(content).length;
+  return message.role.length + contentChars + MESSAGE_OVERHEAD_CHARS;
+}
+
+function fitMessagesToContextBudget(
+  messages: ChatCompletionMessageParam[],
+): ChatCompletionMessageParam[] {
+  const budget = getContextCharBudget();
+  const systemMessage = messages.find((message) => message.role === "system");
+  const nonSystemMessages = messages.filter((message) => message.role !== "system");
+  const kept: ChatCompletionMessageParam[] = [];
+  let used = systemMessage ? countMessageChars(systemMessage) : 0;
+
+  for (let index = nonSystemMessages.length - 1; index >= 0; index -= 1) {
+    const message = nonSystemMessages[index];
+    const nextUsed = used + countMessageChars(message);
+    if (nextUsed > budget && kept.length > 0) {
+      break;
+    }
+    kept.unshift(message);
+    used = nextUsed;
+  }
+
+  const trimmedCount = nonSystemMessages.length - kept.length;
+  if (trimmedCount > 0) {
+    console.warn(
+      `Trimmed ${trimmedCount} old chat message(s) to fit context budget (${budget} chars).`,
+    );
+  }
+
+  return systemMessage ? [systemMessage, ...kept] : kept;
 }
 
 async function toChatMessages(
   history: ChatTurn[],
   userInput: string,
 ): Promise<ChatCompletionMessageParam[]> {
-  const historyMessages: ChatCompletionMessageParam[] = history.map((m) => ({
-    role: m.role,
-    content: m.content,
-  }));
+  const historySystemMessage = history.find((m) => m.role === "system");
+  const systemContent =
+    historySystemMessage?.content ?? (await getSystemPromptWithContext());
+  const historyMessages: ChatCompletionMessageParam[] = history
+    .filter((m) => m.role !== "system")
+    .map((m) => ({
+      role: m.role,
+      content: m.content,
+    }));
 
-  return [
-    { role: "system", content: await getSystemPromptWithContext() },
+  return fitMessagesToContextBudget([
+    { role: "system", content: systemContent },
     ...historyMessages,
     { role: "user", content: userInput },
-  ];
+  ]);
 }
 
 function extractJsonText(raw: string): string {
@@ -283,7 +367,9 @@ function extractAssistantPreview(raw: string): string {
 export async function chatWithBartender(
   userInput: string,
   history: ChatTurn[] = [],
+  signal?: AbortSignal,
 ): Promise<BartenderReply> {
+  signal?.throwIfAborted();
   const config = await resolveLlmConfig();
   if (!config.chatBaseUrl) {
     throw new Error("Missing VITE_BARTENDER_URL");
@@ -306,7 +392,9 @@ export async function chatWithBartender(
     messages: await toChatMessages(history, userInput),
   };
 
-  const completion = await openai.chat.completions.create(request);
+  const completion = await trackLlmRequest(() =>
+    openai.chat.completions.create(request, { signal }),
+  );
 
   const content = completion.choices[0]?.message?.content;
   if (!content) {
@@ -320,7 +408,9 @@ export async function chatWithBartenderStream(
   userInput: string,
   history: ChatTurn[] = [],
   onAssistantText?: (text: string) => void,
+  signal?: AbortSignal,
 ): Promise<BartenderReply> {
+  signal?.throwIfAborted();
   const config = await resolveLlmConfig();
   if (!config.chatBaseUrl) {
     throw new Error("Missing VITE_BARTENDER_URL");
@@ -337,27 +427,35 @@ export async function chatWithBartenderStream(
   }
 
   const openai = createOpenAiClient(apiKey, config.chatBaseUrl);
-  const stream = await openai.chat.completions.create({
-    model,
-    temperature: 0.7,
-    messages: await toChatMessages(history, userInput),
-    stream: true,
-  });
-
   let raw = "";
   let lastAssistantText = "";
-  for await (const part of stream) {
-    const content = part.choices[0]?.delta?.content ?? "";
-    if (!content) {
-      continue;
-    }
+  const finishLlmRequest = beginLlmRequest();
+  try {
+    const stream = await openai.chat.completions.create(
+      {
+        model,
+        temperature: 0.7,
+        messages: await toChatMessages(history, userInput),
+        stream: true,
+      },
+      { signal },
+    );
 
-    raw += content;
-    const nextAssistantText = extractAssistantPreview(raw);
-    if (nextAssistantText && nextAssistantText !== lastAssistantText) {
-      lastAssistantText = nextAssistantText;
-      onAssistantText?.(nextAssistantText);
+    for await (const part of stream) {
+      const content = part.choices[0]?.delta?.content ?? "";
+      if (!content) {
+        continue;
+      }
+
+      raw += content;
+      const nextAssistantText = extractAssistantPreview(raw);
+      if (nextAssistantText && nextAssistantText !== lastAssistantText) {
+        lastAssistantText = nextAssistantText;
+        onAssistantText?.(nextAssistantText);
+      }
     }
+  } finally {
+    finishLlmRequest();
   }
 
   if (!raw.trim()) {
@@ -374,7 +472,9 @@ export async function chatWithBartenderStream(
 export async function createMemoryVector(
   memoryText: string,
   memoryContent: string,
+  signal?: AbortSignal,
 ): Promise<memoryEntry> {
+  signal?.throwIfAborted();
   const config = await resolveLlmConfig();
   const apiKey = config.apiKey || (await getRuntimeApiKey());
   if (!apiKey) {
@@ -399,6 +499,7 @@ export async function createMemoryVector(
       model,
       input: memoryText,
     }),
+    signal,
   });
 
   const payload = await parseEmbeddingResponse(response);
@@ -417,6 +518,41 @@ export async function createMemoryVector(
     vector: Float32Array.from(embedding),
     content: memoryContent,
   };
+}
+
+export interface SavedMemory {
+  id: string;
+  text: string;
+  vector: number[];
+  tags: string[];
+  created_at: number;
+  updated_at: number;
+}
+
+export async function saveLongTermMemory(
+  text: string,
+  tags: string[] = [],
+  signal?: AbortSignal,
+): Promise<SavedMemory> {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    throw new Error("Memory text cannot be empty");
+  }
+  const config = await getAppConfig();
+  if (!config.Use_Experimental_Vector_Memory) {
+    return invoke<SavedMemory>("add_memory", { text: trimmed, tags });
+  }
+
+  const memory = await createMemoryVector(
+    buildMemoryEmbeddingText(trimmed, tags),
+    trimmed,
+    signal,
+  );
+  return invoke<SavedMemory>("add_memory", {
+    text: trimmed,
+    tags,
+    vector: Array.from(memory.vector),
+  });
 }
 
 export async function summarizeExitMemory(context: {
@@ -440,26 +576,28 @@ export async function summarizeExitMemory(context: {
   const t = i18n.getFixedT(language);
   const history = (context.history ?? []);
   const openai = createOpenAiClient(config.apiKey, config.chatBaseUrl);
-  const completion = await openai.chat.completions.create({
-    model: config.chatModel,
-    temperature: 0.4,
-    messages: [
-      {
-        role: "system",
-        content: t("prompts.exitMemorySystem"),
-      },
-      {
-        role: "user",
-        content: JSON.stringify({
-          language: context.language,
-          baseDir: context.baseDir,
-          barRootParent: context.barRootParent,
-          exitedAt: new Date().toISOString(),
-          recentConversation: history,
-        }),
-      },
-    ],
-  });
+  const completion = await trackLlmRequest(() =>
+    openai.chat.completions.create({
+      model: config.chatModel,
+      temperature: 0.4,
+      messages: [
+        {
+          role: "system",
+          content: t("prompts.exitMemorySystem"),
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            language: context.language,
+            baseDir: context.baseDir,
+            barRootParent: context.barRootParent,
+            exitedAt: new Date().toISOString(),
+            recentConversation: history,
+          }),
+        },
+      ],
+    }),
+  );
 
   const content = completion.choices[0]?.message?.content?.trim();
   if (!content) {
@@ -510,12 +648,19 @@ export async function checkChatModelConnection(
   }
 
   const openai = createOpenAiClient(apiKey, config.chatBaseUrl);
-  await openai.chat.completions.create({
-    model: config.chatModel,
-    temperature: 0,
-    max_tokens: 1,
-    messages: [{ role: "user", content: "ping" }],
-  });
+  const completion = await trackLlmRequest(() =>
+    openai.chat.completions.create({
+      model: config.chatModel,
+      temperature: 0,
+      max_tokens: 1,
+      messages: [{ role: "user", content: "ping" }],
+    }),
+  );
+
+  const content = completion.choices[0]?.message?.content;
+  if (!content) {
+    throw new Error(i18n.t("errors.emptyModelResponse"));
+  }
 }
 
 export async function checkEmbeddingModelConnection(
@@ -559,16 +704,22 @@ export async function checkEmbeddingModelConnection(
 }
 
 export interface McpTransport {
-  callTool: (tool: McpToolCall["tool"], args: Record<string, unknown>) => Promise<unknown>;
+  callTool: (
+    tool: McpToolCall["tool"],
+    args: Record<string, unknown>,
+    signal?: AbortSignal,
+  ) => Promise<unknown>;
 }
 
 export async function runMcpToolCalls(
   calls: McpToolCall[],
   transport: McpTransport,
+  signal?: AbortSignal,
 ): Promise<unknown[]> {
   const results: unknown[] = [];
   for (const call of calls) {
-    const result = await transport.callTool(call.tool, call.args);
+    signal?.throwIfAborted();
+    const result = await transport.callTool(call.tool, call.args, signal);
     results.push(result);
   }
   return results;
@@ -589,26 +740,66 @@ export interface BartenderConversationResult {
 export async function runMcpToolCallsDetailed(
   calls: McpToolCall[],
   transport: McpTransport,
+  signal?: AbortSignal,
 ): Promise<BartenderToolResult[]> {
   const results: BartenderToolResult[] = [];
   for (const call of calls) {
+    signal?.throwIfAborted();
+    const historyId = recordMcpCallStart(call);
     // change_state is a frontend-only tool, don't send it to the backend
     if (call.tool === "change_state") {
-      results.push({ call, result: { state: call.args.state } });
+      const result = { state: call.args.state };
+      recordMcpCallFinish(historyId, { result });
+      results.push({ call, result });
       continue;
     }
 
     try {
-      const result = await transport.callTool(call.tool, call.args);
+      const result = await transport.callTool(call.tool, call.args, signal);
+      recordMcpCallFinish(historyId, { result });
       results.push({ call, result });
     } catch (err) {
+      if (signal?.aborted) {
+        recordMcpCallFinish(historyId, { error: "Cancelled" });
+        throw err;
+      }
+      const error = err instanceof Error ? err.message : String(err);
+      recordMcpCallFinish(historyId, { error });
       results.push({
         call,
-        error: err instanceof Error ? err.message : String(err),
+        error,
       });
     }
   }
   return results;
+}
+
+function toolResultForModel(
+  tool: McpToolCall["tool"],
+  result: unknown,
+): unknown {
+  if (typeof result !== "object" || result === null) {
+    return result;
+  }
+
+  const payload = result as Record<string, unknown>;
+  if (tool === "mix_data_drink") {
+    return {
+      message: payload.message,
+      drink_name: payload.drink_name,
+      staged_count: payload.staged_count,
+    };
+  }
+  if (tool === "finalize_drink") {
+    return {
+      drink_name: payload.drink_name,
+      action: payload.action,
+      affected_count: Array.isArray(payload.affected_paths)
+        ? payload.affected_paths.length
+        : undefined,
+    };
+  }
+  return result;
 }
 
 export function buildToolResultPrompt(toolResults: BartenderToolResult[]): string {
@@ -621,10 +812,16 @@ export function buildToolResultPrompt(toolResults: BartenderToolResult[]): strin
     }) as string[]
   ).join("\n");
   const baseListPresentationNote = t("prompts.baseListPresentationNote");
+  const successfulTools = toolResults
+    .filter(({ error }) => !error)
+    .map(({ call }) => call.tool);
 
   return [
     t("prompts.toolResultsFinished"),
     t("prompts.toolResultsReuseJson"),
+    t("prompts.toolResultsNextAction", {
+      tools: successfulTools.join(", ") || "none",
+    }),
     ...(hasBaseList ? [baseListGuidance] : []),
     JSON.stringify(
       toolResults.map(({ call, result, error }) => ({
@@ -635,7 +832,7 @@ export function buildToolResultPrompt(toolResults: BartenderToolResult[]): strin
               presentation_note: baseListPresentationNote,
             }
           : {}),
-        result,
+        result: toolResultForModel(call.tool, result),
         error,
       })),
       null,
@@ -644,32 +841,139 @@ export function buildToolResultPrompt(toolResults: BartenderToolResult[]): strin
   ].join("\n\n");
 }
 
+export function buildToolLoopLimitPrompt(): string {
+  const language = getCurrentLanguage();
+  return i18n.getFixedT(language)("prompts.toolLoopLimit");
+}
+
+function toolCallSignature(call: McpToolCall): string {
+  return `${call.tool}:${JSON.stringify(call.args)}`;
+}
+
+function splitToolCallsForRound(
+  calls: McpToolCall[],
+  completedSignatures: Set<string>,
+): {
+  pendingCalls: McpToolCall[];
+  filteredResults: BartenderToolResult[];
+} {
+  const pendingCalls: McpToolCall[] = [];
+  const filteredResults: BartenderToolResult[] = [];
+  const discoversBaseFiles = calls.some((call) => call.tool === "base_list");
+  const stagesDrink = calls.some((call) => call.tool === "mix_data_drink");
+
+  for (const call of calls) {
+    const waitsForBaseList =
+      discoversBaseFiles &&
+      (call.tool === "get_base" ||
+        call.tool === "mix_data_drink" ||
+        call.tool === "finalize_drink");
+    const waitsForStagedDrink = stagesDrink && call.tool === "finalize_drink";
+    if (waitsForBaseList || waitsForStagedDrink) {
+      filteredResults.push({
+        call,
+        error:
+          "Deferred premature tool call: wait for the prerequisite result, then call it with exact returned values in the next round.",
+      });
+      continue;
+    }
+
+    const signature = toolCallSignature(call);
+    if (call.tool !== "change_state" && completedSignatures.has(signature)) {
+      filteredResults.push({
+        call,
+        error: "Skipped duplicate tool call: reuse the successful result already present in this task.",
+      });
+      continue;
+    }
+    pendingCalls.push(call);
+  }
+
+  return { pendingCalls, filteredResults };
+}
+
+export function rememberSuccessfulToolCalls(
+  toolResults: BartenderToolResult[],
+  completedSignatures: Set<string>,
+): void {
+  for (const { call, error } of toolResults) {
+    if (!error && call.tool !== "change_state") {
+      completedSignatures.add(toolCallSignature(call));
+    }
+  }
+}
+
+export function filterToolCallsForRound(
+  calls: McpToolCall[],
+  completedSignatures: Set<string>,
+): {
+  pendingCalls: McpToolCall[];
+  filteredResults: BartenderToolResult[];
+} {
+  return splitToolCallsForRound(calls, completedSignatures);
+}
+
 export async function chatWithBartenderAndTools(
   userInput: string,
   history: ChatTurn[] = [],
   transport: McpTransport = createLocalMcpTransport(),
+  signal?: AbortSignal,
 ): Promise<BartenderConversationResult> {
-  const initialReply = await chatWithBartender(userInput, history);
-  if (initialReply.toolCalls.length === 0) {
-    return {
-      initialReply,
-      finalReply: initialReply,
-      toolResults: [],
-    };
-  }
-
-  const toolResults = await runMcpToolCallsDetailed(initialReply.toolCalls, transport);
-  const followUpHistory: ChatTurn[] = [
+  const initialReply = await chatWithBartender(userInput, history, signal);
+  let finalReply = initialReply;
+  let followUpHistory: ChatTurn[] = [
     ...history,
     { role: "user", content: userInput },
-    { role: "assistant", content: JSON.stringify(initialReply) },
   ];
-  const finalReply = await chatWithBartender(buildToolResultPrompt(toolResults), followUpHistory);
+  const allToolResults: BartenderToolResult[] = [];
+  const completedSignatures = new Set<string>();
+
+  for (
+    let round = 0;
+    finalReply.toolCalls.length > 0 && round < MAX_BARTENDER_TOOL_ROUNDS;
+    round += 1
+  ) {
+    followUpHistory = [
+      ...followUpHistory,
+      { role: "assistant", content: JSON.stringify(finalReply) },
+    ];
+    const { pendingCalls, filteredResults } = filterToolCallsForRound(
+      finalReply.toolCalls,
+      completedSignatures,
+    );
+    const roundResults = [
+      ...(pendingCalls.length > 0
+        ? await runMcpToolCallsDetailed(pendingCalls, transport, signal)
+        : []),
+      ...filteredResults,
+    ];
+    rememberSuccessfulToolCalls(roundResults, completedSignatures);
+    allToolResults.push(...roundResults);
+
+    const resultPrompt = buildToolResultPrompt(roundResults);
+    finalReply = await chatWithBartender(resultPrompt, followUpHistory, signal);
+    followUpHistory = [
+      ...followUpHistory,
+      { role: "user", content: resultPrompt },
+    ];
+  }
+
+  if (finalReply.toolCalls.length > 0) {
+    followUpHistory = [
+      ...followUpHistory,
+      { role: "assistant", content: JSON.stringify(finalReply) },
+    ];
+    finalReply = await chatWithBartender(
+      buildToolLoopLimitPrompt(),
+      followUpHistory,
+      signal,
+    );
+  }
 
   return {
     initialReply,
     finalReply,
-    toolResults,
+    toolResults: allToolResults,
   };
 }
 
@@ -689,6 +993,7 @@ const MCP_ENDPOINTS: Record<McpToolCall["tool"], string> = {
 async function normalizeToolArgs(
   tool: McpToolCall["tool"],
   args: Record<string, unknown>,
+  signal?: AbortSignal,
 ): Promise<Record<string, unknown>> {
   if (tool === "mix_data_drink" && !("file_paths" in args) && Array.isArray(args.ingredients)) {
     return { ...args, file_paths: args.ingredients };
@@ -700,7 +1005,11 @@ async function normalizeToolArgs(
     }
 
     const tags = normalizeMemoryTags(args.tags);
-    const memory = await createMemoryVector(buildMemoryEmbeddingText(text, tags), text);
+    const config = await getAppConfig();
+    if (!config.Use_Experimental_Vector_Memory) {
+      return { text, tags };
+    }
+    const memory = await createMemoryVector(buildMemoryEmbeddingText(text, tags), text, signal);
     return {
       text,
       tags,
@@ -712,22 +1021,25 @@ async function normalizeToolArgs(
     if (!text) {
       throw new Error("retrieve_memory requires text");
     }
-    const memory = await createMemoryVector(text, text);
-    return {
-      vector: Array.from(memory.vector),
-    };
+    const config = await getAppConfig();
+    if (!config.Use_Experimental_Vector_Memory) {
+      return { text };
+    }
+    const memory = await createMemoryVector(text, text, signal);
+    return { vector: Array.from(memory.vector) };
   }
   return args;
 }
 
 export function createLocalMcpTransport(baseUrl = DEFAULT_MCP_DEBUG_BASE): McpTransport {
   return {
-    callTool: async (tool, args) => {
+    callTool: async (tool, args, signal) => {
       const endpoint = MCP_ENDPOINTS[tool];
       const response = await fetch(`${baseUrl}${endpoint}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(await normalizeToolArgs(tool, args)),
+        body: JSON.stringify(await normalizeToolArgs(tool, args, signal)),
+        signal,
       });
 
       const text = await response.text();
