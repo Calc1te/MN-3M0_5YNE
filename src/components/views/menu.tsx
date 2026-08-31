@@ -29,10 +29,8 @@ export default function Menu({ children }: MenuProps) {
   const navigate = useNavigate();
 
   const pointerRef = useRef({ x: 0, y: 0 });
-  const contentRef = useRef<HTMLDivElement | null>(null);
   const suppressContextMenuUntilRef = useRef(0);
   const [isOpen, setIsOpen] = useState(false);
-  const [menuInstance, setMenuInstance] = useState(0);
 
   const rememberPointer = (event: ReactPointerEvent<HTMLElement>) => {
     pointerRef.current = { x: event.clientX, y: event.clientY };
@@ -72,31 +70,6 @@ export default function Menu({ children }: MenuProps) {
     };
   }, []);
 
-  useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
-
-    const closeFromOutsidePointer = (event: globalThis.PointerEvent) => {
-      const target = event.target;
-      if (target instanceof Node && contentRef.current?.contains(target)) {
-        return;
-      }
-
-      pointerRef.current = { x: event.clientX, y: event.clientY };
-      if (event.button === 2) {
-        suppressContextMenuUntilRef.current = performance.now() + 500;
-      }
-      setMenuInstance((current) => current + 1);
-      handleOpenChange(false);
-    };
-
-    document.addEventListener("pointerdown", closeFromOutsidePointer, true);
-    return () => {
-      document.removeEventListener("pointerdown", closeFromOutsidePointer, true);
-    };
-  }, [isOpen]);
-
   const handleSetting = () => {
     navigate("/settings");
   };
@@ -105,7 +78,7 @@ export default function Menu({ children }: MenuProps) {
   };
 
   return (
-    <ContextMenu key={menuInstance} onOpenChange={handleOpenChange}>
+    <ContextMenu onOpenChange={handleOpenChange}>
       <ContextMenuTrigger asChild>
         <div
           className="min-h-screen w-full"
@@ -117,10 +90,19 @@ export default function Menu({ children }: MenuProps) {
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent
-        ref={contentRef}
         {...ghostModeRegionProps}
         onPointerDown={rememberPointer}
         onPointerMove={rememberPointer}
+        onPointerDownOutside={(event) => {
+          const pointerEvent = event.detail.originalEvent;
+          pointerRef.current = {
+            x: pointerEvent.clientX,
+            y: pointerEvent.clientY,
+          };
+          if (pointerEvent.button === 2) {
+            suppressContextMenuUntilRef.current = performance.now() + 500;
+          }
+        }}
       >
         <ContextMenuItem onSelect={handleSetting}>
           {t("menu.settings")}
