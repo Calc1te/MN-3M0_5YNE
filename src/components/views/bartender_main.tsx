@@ -658,7 +658,10 @@ export default function BartenderMain({
         )}
       />
       {setupGuideStep !== null && (
-        <div {...ghostModeRegionProps} className="w-full">
+        <div
+          {...ghostModeRegionProps}
+          className="absolute right-[calc(100%-15rem)] bottom-30 w-[min(20rem,calc(100vw-26rem))]"
+        >
           <Textarea
             value={setupGuideSteps[setupGuideStep]}
             readOnly

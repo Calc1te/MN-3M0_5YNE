@@ -715,7 +715,7 @@ fn add_plain_memory(text: &str, tags: &[String], created_at: i64) -> Result<Stri
 
     fs::write(&path, next)
         .map_err(|e| format!("Failed to write plain memory {}: {e}", path.display()))?;
-    Ok(display_path(path))
+    Ok(display_path(&path))
 }
 
 fn build_drink_id() -> String {
