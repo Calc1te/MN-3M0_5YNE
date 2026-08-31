@@ -123,7 +123,13 @@
     "api": "API configuration",
     "memory": "Memory",
     "next": "Next",
-    "finish": "Finish"
+    "finish": "Finish",
+    "guideLabel": "Quick guide",
+    "guideClickHint": "Click to show the next guide step",
+    "guideDragP": "Quick guide 1/4\n\nHold P to move the window.\n\nClick here for the next step.",
+    "guideOpenSettings": "Quick guide 2/4\n\nRight-click anywhere in the window to open Settings.\n\nClick here for the next step.",
+    "guideDropFiles": "Quick guide 3/4\n\nDrop files onto P and have her create a \"Hallucination\" drink on the bar.\n\nClick here for the next step.",
+    "guideDrinkActions": "Quick guide 4/4\n\nRight-click a drink on the bar to drink it or put it back.\n\nClick here to close the guide."
   },
   "menu": {
     "trigger": "Right click",

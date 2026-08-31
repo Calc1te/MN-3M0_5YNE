@@ -125,7 +125,13 @@
     "api": "API 配置",
     "memory": "记忆",
     "next": "下一步",
-    "finish": "完成"
+    "finish": "完成",
+    "guideLabel": "操作指南",
+    "guideClickHint": "点击查看下一步操作指南",
+    "guideDragP": "操作指南 1/4\n\n按住 P 可以拖动窗口。\n\n点击这里查看下一步。",
+    "guideOpenSettings": "操作指南 2/4\n\n右键窗口任意位置，可以打开设置。\n\n点击这里查看下一步。",
+    "guideDropFiles": "操作指南 3/4\n\n把文件拖到 P 身上，让 P 生成一杯「幻觉」酒，展示在吧台上。\n\n点击这里查看下一步。",
+    "guideDrinkActions": "操作指南 4/4\n\n右键吧台上的酒，可以决定喝掉它，还是倒回去。\n\n点击这里关闭指南。"
   },
   "utils": {
     "send": "送信",
