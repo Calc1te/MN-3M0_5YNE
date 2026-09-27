@@ -38,6 +38,16 @@ function ensureLocalProtoc() {
   const hasBundledInclude = fs.existsSync(
     path.join(bundledInclude, "google", "protobuf", "empty.proto"),
   );
+  const hasValidInclude = (candidate) =>
+    typeof candidate === "string" &&
+    fs.existsSync(path.join(candidate, "google", "protobuf", "empty.proto"));
+
+  if (env[protocIncludeKey] && !hasValidInclude(env[protocIncludeKey])) {
+    console.warn(
+      `[with-env] Ignoring invalid ${protocIncludeKey}: ${env[protocIncludeKey]}`,
+    );
+    delete env[protocIncludeKey];
+  }
 
   if (hasBundledProtoc) {
     env[protocKey] = bundledProtoc;
@@ -46,7 +56,7 @@ function ensureLocalProtoc() {
     env[protocIncludeKey] = bundledInclude;
   }
 
-  if (env[protocKey] && env[protocIncludeKey]) {
+  if (env[protocKey] && hasValidInclude(env[protocIncludeKey])) {
     return;
   }
 

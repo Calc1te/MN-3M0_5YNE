@@ -9,6 +9,7 @@
     "fileDropTarget": "拖到 P 身上",
     "fileDropRelease": "松手，交给 P",
     "fileDropBusy": "P 还在处理上一批",
+    "smokeTooltip": "P 正在抽：{{file}}",
     "directorySelector": "Base 目录",
     "directoryPlaceholder": "输入目录路径...",
     "directoryChange": "修改",

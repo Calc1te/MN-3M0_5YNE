@@ -6,6 +6,7 @@ use axum::{
     http::StatusCode,
     routing::{get, post},
 };
+use rand::Rng;
 use serde::de::Error as SerdeError;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::sync::{Mutex, OnceLock};
@@ -61,6 +62,88 @@ struct HealthResponse {
 #[derive(Serialize)]
 struct ApiError {
     error: String,
+}
+
+#[derive(Serialize)]
+struct SmokeTempFileResponse {
+    file_name: String,
+    path: String,
+}
+
+fn smoke_temp_file_in(temp_dir: &Path) -> Result<SmokeTempFileResponse, String> {
+    let entries = fs::read_dir(temp_dir)
+        .map_err(|error| format!("Could not read temp directory: {error}"))?;
+    let mut candidates = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|error| format!("Could not scan temp directory: {error}"))?;
+        let file_type = entry
+            .file_type()
+            .map_err(|error| format!("Could not inspect temp entry: {error}"))?;
+        if file_type.is_file() {
+            candidates.push(entry.path());
+        }
+    }
+    if candidates.is_empty() {
+        return Err("No regular files directly inside the system temp directory".into());
+    }
+    let index = rand::rng().random_range(0..candidates.len());
+    let path = &candidates[index];
+    // Recheck before removal. Symlinks and directories are never eligible.
+    if !fs::symlink_metadata(path)
+        .map_err(|error| format!("Could not recheck selected file: {error}"))?
+        .file_type()
+        .is_file()
+    {
+        return Err("Selected temp entry is no longer a regular file".into());
+    }
+    fs::remove_file(path)
+        .map_err(|error| format!("Could not delete selected temp file: {error}"))?;
+    Ok(SmokeTempFileResponse {
+        file_name: path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned(),
+        path: display_path(path),
+    })
+}
+
+#[tauri::command]
+fn smoke_temp_file() -> Result<SmokeTempFileResponse, String> {
+    smoke_temp_file_in(&env::temp_dir())
+}
+
+#[cfg(test)]
+mod smoking_tests {
+    use super::*;
+
+    #[test]
+    fn smoking_removes_only_a_direct_regular_file() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let fixture = env::temp_dir().join(format!(
+            "data-bar-smoke-test-{}-{unique}",
+            std::process::id()
+        ));
+        fs::create_dir(&fixture).unwrap();
+        let regular_file = fixture.join("ingredient.tmp");
+        let nested_dir = fixture.join("nested");
+        fs::write(&regular_file, b"test").unwrap();
+        fs::create_dir(&nested_dir).unwrap();
+        fs::write(nested_dir.join("keep.tmp"), b"keep").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(nested_dir.join("keep.tmp"), fixture.join("link.tmp")).unwrap();
+
+        let result = smoke_temp_file_in(&fixture).unwrap();
+        assert_eq!(result.file_name, "ingredient.tmp");
+        assert!(!regular_file.exists());
+        assert!(nested_dir.join("keep.tmp").exists());
+        assert!(smoke_temp_file_in(&fixture).is_err());
+
+        fs::remove_dir_all(&fixture).unwrap();
+    }
 }
 
 #[derive(Deserialize, Default)]
@@ -1817,6 +1900,7 @@ pub fn run() {
             add_memory,
             retrive_memory,
             get_plain_memory,
+            smoke_temp_file,
             check_lance_connection,
             get_time_and_date,
             set_ghost_mode,

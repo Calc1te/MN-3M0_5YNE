@@ -16,6 +16,8 @@ import {
   recordMcpCallStart,
 } from "@/lib/mcp-call-history";
 import { beginLlmRequest, trackLlmRequest } from "@/lib/llm-request-state";
+import { performSmoking } from "@/uiControllers/smoking";
+import { changeBartenderState, normalizeBartenderState } from "@/uiControllers/bartender";
 
 export type Role = "user" | "assistant" | "system";
 
@@ -136,7 +138,7 @@ async function resolveLlmConfig(
 function getSystemPrompt(): string {
   const language = getCurrentLanguage();
   const t = i18n.getFixedT(language);
-  return `${t("prompts.system")}\n\n${t("prompts.toolWorkflow")}`;
+  return `${t("prompts.system")}\n\n${t("prompts.smokingStatePolicy")}\n\n${t("prompts.toolWorkflow")}`;
 }
 
 interface StartupContext {
@@ -746,15 +748,20 @@ export async function runMcpToolCallsDetailed(
   for (const call of calls) {
     signal?.throwIfAborted();
     const historyId = recordMcpCallStart(call);
-    // change_state is a frontend-only tool, don't send it to the backend
-    if (call.tool === "change_state") {
-      const result = { state: call.args.state };
-      recordMcpCallFinish(historyId, { result });
-      results.push({ call, result });
-      continue;
-    }
-
     try {
+      // change_state remains P's original tool; entering smoking also consumes a temp file.
+      if (call.tool === "change_state") {
+        const requestedState = String(call.args.state ?? "").trim();
+        const state = normalizeBartenderState(
+          requestedState.toLowerCase() === "smoling" ? "smoking" : requestedState,
+        );
+        const result = state === "smoking"
+          ? { state, file_name: (await performSmoking()).file_name }
+          : { state: changeBartenderState(state) };
+        recordMcpCallFinish(historyId, { result });
+        results.push({ call, result });
+        continue;
+      }
       const result = await transport.callTool(call.tool, call.args, signal);
       recordMcpCallFinish(historyId, { result });
       results.push({ call, result });
@@ -815,6 +822,12 @@ export function buildToolResultPrompt(toolResults: BartenderToolResult[]): strin
   const successfulTools = toolResults
     .filter(({ error }) => !error)
     .map(({ call }) => call.tool);
+  const smokingFailed = toolResults.some(
+    ({ call, error }) =>
+      isSmokingStateCall(call) &&
+      Boolean(error) &&
+      !error?.startsWith("Skipped duplicate smoking attempt"),
+  );
 
   return [
     t("prompts.toolResultsFinished"),
@@ -822,6 +835,7 @@ export function buildToolResultPrompt(toolResults: BartenderToolResult[]): strin
     t("prompts.toolResultsNextAction", {
       tools: successfulTools.join(", ") || "none",
     }),
+    ...(smokingFailed ? [t("prompts.smokeFailure")] : []),
     ...(hasBaseList ? [baseListGuidance] : []),
     JSON.stringify(
       toolResults.map(({ call, result, error }) => ({
@@ -847,7 +861,14 @@ export function buildToolLoopLimitPrompt(): string {
 }
 
 function toolCallSignature(call: McpToolCall): string {
+  if (isSmokingStateCall(call)) return "change_state:smoking";
   return `${call.tool}:${JSON.stringify(call.args)}`;
+}
+
+function isSmokingStateCall(call: McpToolCall): boolean {
+  if (call.tool !== "change_state") return false;
+  const state = String(call.args.state ?? "").trim().toLowerCase();
+  return state === "smoking" || state === "smoling";
 }
 
 function splitToolCallsForRound(
@@ -861,6 +882,7 @@ function splitToolCallsForRound(
   const filteredResults: BartenderToolResult[] = [];
   const discoversBaseFiles = calls.some((call) => call.tool === "base_list");
   const stagesDrink = calls.some((call) => call.tool === "mix_data_drink");
+  let pendingSmoke = false;
 
   for (const call of calls) {
     const waitsForBaseList =
@@ -879,6 +901,16 @@ function splitToolCallsForRound(
     }
 
     const signature = toolCallSignature(call);
+    if (isSmokingStateCall(call)) {
+      if (pendingSmoke || completedSignatures.has(signature)) {
+        filteredResults.push({
+          call,
+          error: "Skipped duplicate smoking attempt in this task.",
+        });
+        continue;
+      }
+      pendingSmoke = true;
+    }
     if (call.tool !== "change_state" && completedSignatures.has(signature)) {
       filteredResults.push({
         call,
@@ -897,6 +929,10 @@ export function rememberSuccessfulToolCalls(
   completedSignatures: Set<string>,
 ): void {
   for (const { call, error } of toolResults) {
+    if (isSmokingStateCall(call)) {
+      completedSignatures.add(toolCallSignature(call));
+      continue;
+    }
     if (!error && call.tool !== "change_state") {
       completedSignatures.add(toolCallSignature(call));
     }

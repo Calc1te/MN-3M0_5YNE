@@ -36,18 +36,22 @@ import {
 } from "@/lib/language";
 import { cn } from "@/lib/utils";
 import {
-  changeBartenderState,
-  isBartenderState,
-} from "@/uiControllers/bartender";
-import {
   clearBarCounterDrink,
   showBarCounterDrink,
 } from "@/uiControllers/bar-counter-drink";
 import { setIdleTriggerState } from "@/uiControllers/idle-trigger";
+import { performSmoking } from "@/uiControllers/smoking";
 
 interface BartenderMainProps {
   showSetupCompletePrompt?: boolean;
   onSetupCompletePromptShown?: () => void;
+}
+
+const SMOKE_IDLE_MIN_MS = 2 * 60 * 1000;
+const SMOKE_IDLE_RANDOM_MS = 3 * 60 * 1000;
+
+function nextSmokeIdleDelay(): number {
+  return SMOKE_IDLE_MIN_MS + Math.random() * SMOKE_IDLE_RANDOM_MS;
 }
 
 export default function BartenderMain({
@@ -252,37 +256,6 @@ export default function BartenderMain({
         continue;
       }
 
-      if (call.tool !== "change_state") {
-        continue;
-      }
-
-      const resultState =
-        typeof result === "object" &&
-        result !== null &&
-        "state" in result &&
-        typeof (result as { state?: unknown }).state === "string"
-          ? String((result as { state?: unknown }).state)
-          : null;
-      const fallbackState =
-        typeof call.args.state === "string" ? call.args.state : null;
-      const rawState = resultState ?? fallbackState;
-      if (!rawState) {
-        console.warn("MCP change_state did not return a state.");
-        continue;
-      }
-
-      const normalized = rawState.trim().toLowerCase();
-      const mapped =
-        normalized === "smoling"
-          ? "smoking"
-          : normalized === "lookingatyou"
-            ? "lookingAtYou"
-            : normalized;
-      if (!isBartenderState(mapped)) {
-        console.warn("Unknown bartender state from MCP:", rawState);
-        continue;
-      }
-      changeBartenderState(mapped);
     }
   };
 
@@ -611,6 +584,70 @@ export default function BartenderMain({
   useEffect(() => {
     return () => {
       activeConversationRef.current?.controller.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    let timer: number | null = null;
+    let disposed = false;
+    let smokedThisIdlePeriod = false;
+
+    const schedule = (delayMs: number) => {
+      if (timer !== null) window.clearTimeout(timer);
+      if (smokedThisIdlePeriod) return;
+      timer = window.setTimeout(async () => {
+        timer = null;
+        if (disposed) return;
+        if (document.visibilityState === "hidden") return;
+        if (isLoadingRef.current || activeConversationRef.current) {
+          schedule(60_000);
+          return;
+        }
+
+        smokedThisIdlePeriod = true;
+        try {
+          await performSmoking();
+        } catch (smokeError) {
+          console.warn("P could not smoke a temp file:", smokeError);
+          if (!disposed && !activeConversationRef.current) {
+            await runConversation(
+              `${i18n.t("prompts.smokeFailure")}\n\n${i18n.t("prompts.smokeFailureIdle")}`,
+              {
+                persistUserInput: false,
+                clearInputAfterReply: false,
+                automatic: false,
+                restoreInputOnCancel: false,
+                allowedTools: [],
+              },
+            );
+          }
+        }
+      }, delayMs);
+    };
+
+    const markActivity = () => {
+      smokedThisIdlePeriod = false;
+      schedule(nextSmokeIdleDelay());
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        if (timer !== null) window.clearTimeout(timer);
+        timer = null;
+      } else {
+        markActivity();
+      }
+    };
+    schedule(nextSmokeIdleDelay());
+    window.addEventListener("pointerdown", markActivity);
+    window.addEventListener("keydown", markActivity);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      disposed = true;
+      if (timer !== null) window.clearTimeout(timer);
+      window.removeEventListener("pointerdown", markActivity);
+      window.removeEventListener("keydown", markActivity);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, []);
 

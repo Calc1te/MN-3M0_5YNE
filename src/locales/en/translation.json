@@ -9,6 +9,7 @@
     "fileDropTarget": "Drop onto P",
     "fileDropRelease": "Release, give them to P",
     "fileDropBusy": "P is handling the last batch",
+    "smokeTooltip": "P is smoking: {{file}}",
     "directorySelector": "Base Directory",
     "directoryPlaceholder": "Enter directory path...",
     "directoryChange": "Change",

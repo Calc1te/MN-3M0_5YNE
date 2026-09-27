@@ -9,6 +9,7 @@
     "fileDropTarget": "P に重ねる",
     "fileDropRelease": "離して P に渡す",
     "fileDropBusy": "P は前の分を処理中",
+    "smokeTooltip": "P が吸っているもの：{{file}}",
     "directorySelector": "ベースディレクトリ",
     "directoryPlaceholder": "ディレクトリのパスを入力...",
     "directoryChange": "変更",

@@ -14,6 +14,8 @@ import PSprite from "@/components/P_sprite";
 import { enableClick, ghostModeRegionProps } from "@/lib/ghost-mode";
 import { getChatFontClass } from "@/lib/language";
 import { cn } from "@/lib/utils";
+import { getBartenderState, onBartenderStateChange } from "@/uiControllers/bartender";
+import { getSmokedTempFile, onSmokedTempFileChange } from "@/uiControllers/smoking";
 
 interface PFileDropTargetProps {
   disabled?: boolean;
@@ -41,6 +43,11 @@ export default function PFileDropTarget({
   const dragSessionRef = useRef(0);
   const [isFileDragActive, setIsFileDragActive] = useState(false);
   const [isFileOverP, setIsFileOverP] = useState(false);
+  const [bartenderState, setBartenderState] = useState(getBartenderState);
+  const [smokedFile, setSmokedFile] = useState(getSmokedTempFile);
+
+  useEffect(() => onBartenderStateChange(setBartenderState), []);
+  useEffect(() => onSmokedTempFileChange(setSmokedFile), []);
 
   disabledRef.current = disabled;
   onFilesDroppedRef.current = onFilesDropped;
@@ -202,7 +209,7 @@ export default function PFileDropTarget({
 
   return (
     <div
-      className={cn("p-sprite-container relative self-end", className)}
+      className={cn("p-sprite-container group relative self-end", className)}
       ref={targetRef}
     >
       <PSprite
@@ -213,6 +220,14 @@ export default function PFileDropTarget({
         data-tauri-drag-region
         {...ghostModeRegionProps}
       />
+      {bartenderState === "smoking" && smokedFile && (
+        <div
+          role="tooltip"
+          className={cn("pointer-events-none absolute bottom-full right-0 z-30 mb-1 hidden w-max max-w-56 break-all rounded border border-white/50 bg-black/90 px-2 py-1 text-xs text-white shadow-lg group-hover:block", chatFontClass)}
+        >
+          {t("ui.smokeTooltip", { file: smokedFile.file_name })}
+        </div>
+      )}
       <BarCounterDrinkMenu
         disabled={disabled}
         onActionError={onDrinkActionError}
