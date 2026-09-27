@@ -1,20 +1,13 @@
 import { useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
-import { createMemoryVector } from "@/api_caller";
+import { saveLongTermMemory, type SavedMemory } from "@/api_caller";
 import { useButtonClickSound } from "@/lib/use-button-click-sound";
-
-interface AddMemoryResponse {
-  id: string;
-  text: string;
-  vector: number[];
-}
 
 export default function MemoryAdder() {
   const { t } = useTranslation();
   const [text, setText] = useState("");
   const [isSaving, setIsSaving] = useState(false);
-  const [result, setResult] = useState<AddMemoryResponse | null>(null);
+  const [result, setResult] = useState<SavedMemory | null>(null);
   const [error, setError] = useState<string | null>(null);
   const playButtonClickSound = useButtonClickSound();
 
@@ -30,11 +23,7 @@ export default function MemoryAdder() {
     setResult(null);
 
     try {
-      const memory = await createMemoryVector(trimmed, trimmed);
-      const saved = await invoke<AddMemoryResponse>("add_memory", {
-        text: trimmed,
-        vector: Array.from(memory.vector),
-      });
+      const saved = await saveLongTermMemory(trimmed);
       setResult(saved);
       setText("");
     } catch (err) {

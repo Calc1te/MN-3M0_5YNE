@@ -41,6 +41,7 @@ import {
   onBartenderStateChange,
   type BartenderState,
 } from "@/uiControllers/bartender";
+import { showRandomBarCounterDrink } from "@/uiControllers/bar-counter-drink";
 import {
   getIdleTriggerState,
   onIdleTriggerStateChange,
@@ -60,6 +61,7 @@ type DebugStagedFile = {
 
 type DebugStagedDrink = {
   drink_id: string;
+  drink_name: string;
   staged_dir: string;
   staged_files: DebugStagedFile[];
   modified_unix_secs: number | null;
@@ -395,6 +397,18 @@ export default function DebugMenu() {
             {countdownText}
           </div>
         </section>
+        <section className="flex w-full max-w-xs flex-col gap-2">
+          <div className="text-sm font-medium">
+            {t("ui.debugBarDrink") || "Bar counter drink"}
+          </div>
+          <button
+            className="w-fit rounded border border-border px-3 py-2 text-xs text-muted-foreground hover:text-foreground"
+            onClick={showRandomBarCounterDrink}
+            type="button"
+          >
+            {t("ui.debugBarDrinkRandom") || "Randomize drink"}
+          </button>
+        </section>
         <section className="flex w-full max-w-md flex-col gap-2">
           <div className="text-sm font-medium">
             {t("ui.debugConversation") || "Conversation"}
@@ -444,6 +458,11 @@ export default function DebugMenu() {
                     className="border-b border-border pb-3 last:border-b-0 last:pb-0"
                     key={drink.drink_id}
                   >
+                    {drink.drink_name && (
+                      <div className="mb-1 font-medium text-foreground">
+                        {drink.drink_name}
+                      </div>
+                    )}
                     <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1">
                       <span className="font-mono text-foreground">
                         {drink.drink_id}

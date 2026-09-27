@@ -6,6 +6,7 @@ use axum::{
     http::StatusCode,
     routing::{get, post},
 };
+use rand::Rng;
 use serde::de::Error as SerdeError;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::sync::{Mutex, OnceLock};
@@ -31,6 +32,24 @@ const APP_CONFIG_FILE_NAME: &str = "configs.json";
 const LOGS_DIR_NAME: &str = "logs";
 const TAURI_LOG_FILE_NAME: &str = "tauri.log";
 const WEBVIEW_LOG_FILE_NAME: &str = "webview.log";
+const PLAIN_MEMORY_FILE_NAME: &str = "memory.md";
+const MAX_PLAIN_MEMORY_CHARS: usize = 12_000;
+
+fn display_path(path: &Path) -> String {
+    let value = path.to_string_lossy();
+
+    #[cfg(windows)]
+    {
+        if let Some(unc_path) = value.strip_prefix(r"\\?\UNC\") {
+            return format!(r"\\{unc_path}");
+        }
+        if let Some(normal_path) = value.strip_prefix(r"\\?\") {
+            return normal_path.to_string();
+        }
+    }
+
+    value.into_owned()
+}
 
 #[derive(Clone)]
 struct ApiState;
@@ -43,6 +62,88 @@ struct HealthResponse {
 #[derive(Serialize)]
 struct ApiError {
     error: String,
+}
+
+#[derive(Serialize)]
+struct SmokeTempFileResponse {
+    file_name: String,
+    path: String,
+}
+
+fn smoke_temp_file_in(temp_dir: &Path) -> Result<SmokeTempFileResponse, String> {
+    let entries = fs::read_dir(temp_dir)
+        .map_err(|error| format!("Could not read temp directory: {error}"))?;
+    let mut candidates = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|error| format!("Could not scan temp directory: {error}"))?;
+        let file_type = entry
+            .file_type()
+            .map_err(|error| format!("Could not inspect temp entry: {error}"))?;
+        if file_type.is_file() {
+            candidates.push(entry.path());
+        }
+    }
+    if candidates.is_empty() {
+        return Err("No regular files directly inside the system temp directory".into());
+    }
+    let index = rand::rng().random_range(0..candidates.len());
+    let path = &candidates[index];
+    // Recheck before removal. Symlinks and directories are never eligible.
+    if !fs::symlink_metadata(path)
+        .map_err(|error| format!("Could not recheck selected file: {error}"))?
+        .file_type()
+        .is_file()
+    {
+        return Err("Selected temp entry is no longer a regular file".into());
+    }
+    fs::remove_file(path)
+        .map_err(|error| format!("Could not delete selected temp file: {error}"))?;
+    Ok(SmokeTempFileResponse {
+        file_name: path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned(),
+        path: display_path(path),
+    })
+}
+
+#[tauri::command]
+fn smoke_temp_file() -> Result<SmokeTempFileResponse, String> {
+    smoke_temp_file_in(&env::temp_dir())
+}
+
+#[cfg(test)]
+mod smoking_tests {
+    use super::*;
+
+    #[test]
+    fn smoking_removes_only_a_direct_regular_file() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let fixture = env::temp_dir().join(format!(
+            "data-bar-smoke-test-{}-{unique}",
+            std::process::id()
+        ));
+        fs::create_dir(&fixture).unwrap();
+        let regular_file = fixture.join("ingredient.tmp");
+        let nested_dir = fixture.join("nested");
+        fs::write(&regular_file, b"test").unwrap();
+        fs::create_dir(&nested_dir).unwrap();
+        fs::write(nested_dir.join("keep.tmp"), b"keep").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(nested_dir.join("keep.tmp"), fixture.join("link.tmp")).unwrap();
+
+        let result = smoke_temp_file_in(&fixture).unwrap();
+        assert_eq!(result.file_name, "ingredient.tmp");
+        assert!(!regular_file.exists());
+        assert!(nested_dir.join("keep.tmp").exists());
+        assert!(smoke_temp_file_in(&fixture).is_err());
+
+        fs::remove_dir_all(&fixture).unwrap();
+    }
 }
 
 #[derive(Deserialize, Default)]
@@ -73,6 +174,7 @@ struct BaseGetRequest {
 struct MixDataDrinkRequest {
     file_paths: Option<Vec<String>>,
     ingredients: Option<Vec<String>>,
+    drink_name: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -84,6 +186,8 @@ struct StagedFileRecord {
 #[derive(Serialize, Deserialize)]
 struct DrinkManifest {
     drink_id: String,
+    #[serde(default)]
+    drink_name: String,
     staged_files: Vec<StagedFileRecord>,
 }
 
@@ -91,19 +195,22 @@ struct DrinkManifest {
 struct MixDataDrinkResponse {
     message: String,
     drink_id: String,
+    drink_name: String,
     staged_dir: String,
     staged_count: usize,
 }
 
 #[derive(Deserialize)]
 struct FinalizeDrinkRequest {
-    drink_id: String,
+    drink_id: Option<String>,
+    drink_name: Option<String>,
     action: String,
 }
 
 #[derive(Serialize)]
 struct FinalizeDrinkResponse {
     drink_id: String,
+    drink_name: String,
     action: String,
     affected_paths: Vec<String>,
 }
@@ -111,6 +218,7 @@ struct FinalizeDrinkResponse {
 #[derive(Serialize)]
 struct DebugStagedDrink {
     drink_id: String,
+    drink_name: String,
     staged_dir: String,
     staged_files: Vec<StagedFileRecord>,
     modified_unix_secs: Option<u64>,
@@ -130,7 +238,8 @@ struct AddMemoryRequest {
 
 #[derive(Deserialize)]
 struct RetrieveMemoryRequest {
-    vector: Vec<f32>,
+    text: Option<String>,
+    vector: Option<Vec<f32>>,
 }
 
 #[derive(Serialize)]
@@ -153,8 +262,14 @@ struct ConnectionStatusResponse {
     online: bool,
 }
 
+#[derive(Serialize)]
+struct MemoryBackendResponse {
+    use_experimental_vector_memory: bool,
+}
+
 static CURRENT_BASE_DIR: OnceLock<Mutex<PathBuf>> = OnceLock::new();
 static STARTUP_CONTEXT: OnceLock<BarConfig> = OnceLock::new();
+static MEMORY_FILE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 fn current_base_dir() -> PathBuf {
     let default_dir = dirs::desktop_dir().unwrap_or_else(|| ".".into());
@@ -221,6 +336,8 @@ struct BarConfig {
     embedding_base_url: String,
     #[serde(rename = "Embedding_Model", default)]
     embedding_model: String,
+    #[serde(rename = "Use_Experimental_Vector_Memory", default)]
+    use_experimental_vector_memory: bool,
     #[serde(rename = "Setup_Completed", default)]
     setup_completed: bool,
     #[serde(rename = "Remember_On_Exit", default)]
@@ -277,6 +394,7 @@ impl Default for BarConfig {
             chat_model: String::new(),
             embedding_base_url: String::new(),
             embedding_model: String::new(),
+            use_experimental_vector_memory: false,
             setup_completed: false,
             remember_on_exit: false,
             always_on_top: false,
@@ -451,7 +569,7 @@ fn legacy_config_paths() -> Result<Vec<PathBuf>, String> {
 fn normalize_bar_root_parent_value(value: &str) -> Result<String, String> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
-        return Ok(resolve_bar_root_parent()?.to_string_lossy().into_owned());
+        return Ok(display_path(&resolve_bar_root_parent()?));
     }
 
     let path = PathBuf::from(trimmed);
@@ -461,7 +579,7 @@ fn normalize_bar_root_parent_value(value: &str) -> Result<String, String> {
             .to_string_lossy()
             .into_owned()),
         Ok(_) | Err(_) => {
-            let fallback = resolve_bar_root_parent()?.to_string_lossy().into_owned();
+            let fallback = display_path(&resolve_bar_root_parent()?);
             log_tauri_message(format!(
                 "normalize_bar_root_parent:fallback invalid={} fallback={}",
                 trimmed, fallback
@@ -481,7 +599,7 @@ fn normalize_loaded_config(config: &mut BarConfig) -> Result<bool, String> {
         if let Ok(metadata) = fs::metadata(&path) {
             if metadata.is_dir() {
                 let canonical = fs::canonicalize(&path).unwrap_or(path);
-                let canonical_str = canonical.to_string_lossy().into_owned();
+                let canonical_str = display_path(&canonical);
                 if canonical_str != config.base_dir {
                     config.base_dir = canonical_str;
                     changed = true;
@@ -533,7 +651,7 @@ fn read_config() -> Result<BarConfig, String> {
     }
 
     let mut config = BarConfig::default();
-    config.bar_root_parent = resolve_bar_root_parent()?.to_string_lossy().into_owned();
+    config.bar_root_parent = display_path(&resolve_bar_root_parent()?);
     Ok(config)
 }
 
@@ -566,10 +684,10 @@ fn initialize_startup_context() -> Result<BarConfig, String> {
     let mut config = read_config()?;
     let previous_last = config.last_activated;
     if config.base_dir.trim().is_empty() {
-        config.base_dir = current_base_dir().to_string_lossy().into_owned();
+        config.base_dir = display_path(&current_base_dir());
     }
     if config.bar_root_parent.trim().is_empty() {
-        config.bar_root_parent = resolve_bar_root_parent()?.to_string_lossy().into_owned();
+        config.bar_root_parent = display_path(&resolve_bar_root_parent()?);
     }
 
     let updated = BarConfig {
@@ -628,6 +746,59 @@ fn memory_db_dir() -> Result<PathBuf, String> {
         )
     })?;
     Ok(dir)
+}
+
+fn plain_memory_path() -> Result<PathBuf, String> {
+    Ok(bar_root_dir()?.join(PLAIN_MEMORY_FILE_NAME))
+}
+
+fn read_plain_memory() -> Result<String, String> {
+    let path = plain_memory_path()?;
+    if !path.exists() {
+        return Ok(String::new());
+    }
+
+    let memory = fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read plain memory {}: {e}", path.display()))?;
+    if memory.chars().count() > MAX_PLAIN_MEMORY_CHARS {
+        return Err(format!(
+            "Plain memory exceeds the {MAX_PLAIN_MEMORY_CHARS}-character prompt budget: {}",
+            path.display()
+        ));
+    }
+    Ok(memory.trim().to_string())
+}
+
+fn add_plain_memory(text: &str, tags: &[String], created_at: i64) -> Result<String, String> {
+    let _guard = MEMORY_FILE_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .map_err(|_| "Plain memory lock was poisoned".to_string())?;
+    let path = plain_memory_path()?;
+    let existing = if path.exists() {
+        fs::read_to_string(&path)
+            .map_err(|e| format!("Failed to read plain memory {}: {e}", path.display()))?
+    } else {
+        String::new()
+    };
+    let tags_line = if tags.is_empty() {
+        String::new()
+    } else {
+        format!("\nTags: {}", tags.join(", "))
+    };
+    let entry = format!("## Memory {created_at}{tags_line}\n{}\n", text.trim());
+    let separator = if existing.trim().is_empty() { "" } else { "\n" };
+    let next = format!("{existing}{separator}{entry}");
+    if next.chars().count() > MAX_PLAIN_MEMORY_CHARS {
+        return Err(format!(
+            "Plain memory is full ({MAX_PLAIN_MEMORY_CHARS} characters). Edit {} to remove obsolete entries before adding more.",
+            path.display()
+        ));
+    }
+
+    fs::write(&path, next)
+        .map_err(|e| format!("Failed to write plain memory {}: {e}", path.display()))?;
+    Ok(display_path(&path))
 }
 
 fn build_drink_id() -> String {
@@ -698,6 +869,7 @@ fn read_debug_staged_drinks() -> Result<Vec<DebugStagedDrink>, String> {
 
         drinks.push(DebugStagedDrink {
             drink_id: manifest.drink_id,
+            drink_name: manifest.drink_name,
             staged_dir: session_dir.to_string_lossy().into_owned(),
             staged_files: manifest.staged_files,
             modified_unix_secs,
@@ -706,6 +878,52 @@ fn read_debug_staged_drinks() -> Result<Vec<DebugStagedDrink>, String> {
 
     drinks.sort_by(|a, b| b.modified_unix_secs.cmp(&a.modified_unix_secs));
     Ok(drinks)
+}
+
+fn staged_drink_display_name(drink_name: &str, staged_files: &[StagedFileRecord]) -> String {
+    let drink_name = drink_name.trim();
+    if !drink_name.is_empty() {
+        return drink_name.to_string();
+    }
+
+    let Some(first_file) = staged_files.first() else {
+        return String::new();
+    };
+    let first_name = Path::new(&first_file.original_path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(&first_file.original_path);
+    let remaining = staged_files.len().saturating_sub(1);
+    if remaining > 0 {
+        format!("{first_name} +{remaining}")
+    } else {
+        first_name.to_string()
+    }
+}
+
+fn resolve_pending_drink_id(drink_name: &str) -> Result<String, String> {
+    let target_name = drink_name.trim();
+    if target_name.is_empty() {
+        return Err("drink_name is required".to_string());
+    }
+    let target_name_folded = target_name.to_lowercase();
+
+    let matches = read_debug_staged_drinks()?
+        .into_iter()
+        .filter(|drink| {
+            staged_drink_display_name(&drink.drink_name, &drink.staged_files).to_lowercase()
+                == target_name_folded
+        })
+        .map(|drink| drink.drink_id)
+        .collect::<Vec<_>>();
+
+    match matches.as_slice() {
+        [drink_id] => Ok(drink_id.clone()),
+        [] => Err(format!("No pending drink named '{target_name}'")),
+        _ => Err(format!(
+            "Multiple pending drinks are named '{target_name}'; use the drink menu to choose one"
+        )),
+    }
 }
 
 fn trim_to_chars(input: String, max_chars: usize) -> String {
@@ -848,7 +1066,7 @@ fn metadata_to_entry(
     };
 
     Ok(BaseEntry {
-        path: path.to_string_lossy().into_owned(),
+        path: display_path(path),
         name,
         is_dir: metadata.is_dir(),
         size: metadata.len(),
@@ -943,10 +1161,25 @@ fn permanently_delete(path: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn stage_files_for_drink(file_paths: Vec<String>) -> Result<MixDataDrinkResponse, String> {
+fn normalize_drink_name(drink_name: Option<String>) -> Result<String, String> {
+    let drink_name = drink_name
+        .map(|name| name.trim().to_string())
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| "drink_name is required".to_string())?;
+    if drink_name.chars().count() > 80 {
+        return Err("drink_name must be 80 characters or fewer".to_string());
+    }
+    Ok(drink_name)
+}
+
+fn stage_files_for_drink(
+    file_paths: Vec<String>,
+    drink_name: Option<String>,
+) -> Result<MixDataDrinkResponse, String> {
     if file_paths.is_empty() {
         return Err("file_paths cannot be empty".to_string());
     }
+    let drink_name = normalize_drink_name(drink_name)?;
 
     let bar = shaker_root_dir()?;
     let drink_id = build_drink_id();
@@ -993,6 +1226,7 @@ fn stage_files_for_drink(file_paths: Vec<String>) -> Result<MixDataDrinkResponse
 
     let manifest = DrinkManifest {
         drink_id: drink_id.clone(),
+        drink_name: drink_name.clone(),
         staged_files: staged,
     };
     write_manifest(&session_dir, &manifest)?;
@@ -1000,13 +1234,55 @@ fn stage_files_for_drink(file_paths: Vec<String>) -> Result<MixDataDrinkResponse
     Ok(MixDataDrinkResponse {
         message: format!("Staged {} file(s) for drink", manifest.staged_files.len()),
         drink_id,
+        drink_name,
         staged_dir: session_dir.to_string_lossy().into_owned(),
         staged_count: manifest.staged_files.len(),
     })
 }
 
+#[cfg(test)]
+mod drink_manifest_tests {
+    use super::{DrinkManifest, StagedFileRecord, normalize_drink_name, staged_drink_display_name};
+
+    #[test]
+    fn validates_and_trims_drink_names() {
+        assert_eq!(
+            normalize_drink_name(Some("  Cold Compile  ".to_string())).unwrap(),
+            "Cold Compile"
+        );
+        assert!(normalize_drink_name(Some("   ".to_string())).is_err());
+        assert!(normalize_drink_name(Some("x".repeat(81))).is_err());
+    }
+
+    #[test]
+    fn reads_legacy_manifest_without_drink_name() {
+        let manifest: DrinkManifest =
+            serde_json::from_str(r#"{"drink_id":"drink-legacy","staged_files":[]}"#).unwrap();
+
+        assert_eq!(manifest.drink_id, "drink-legacy");
+        assert!(manifest.drink_name.is_empty());
+    }
+
+    #[test]
+    fn gives_legacy_drinks_the_same_fallback_name_as_the_menu() {
+        let files = vec![
+            StagedFileRecord {
+                original_path: "/tmp/old-notes.txt".to_string(),
+                staged_path: "/tmp/staged-1".to_string(),
+            },
+            StagedFileRecord {
+                original_path: "/tmp/other.txt".to_string(),
+                staged_path: "/tmp/staged-2".to_string(),
+            },
+        ];
+
+        assert_eq!(staged_drink_display_name("", &files), "old-notes.txt +1");
+    }
+}
+
 fn finalize_drink_internal(drink_id: &str, action: &str) -> Result<FinalizeDrinkResponse, String> {
     let (session_dir, manifest) = read_manifest(drink_id)?;
+    let drink_name = staged_drink_display_name(&manifest.drink_name, &manifest.staged_files);
     let mut affected_paths = Vec::new();
 
     match action {
@@ -1046,6 +1322,7 @@ fn finalize_drink_internal(drink_id: &str, action: &str) -> Result<FinalizeDrink
 
     Ok(FinalizeDrinkResponse {
         drink_id: manifest.drink_id,
+        drink_name,
         action: action.to_string(),
         affected_paths,
     })
@@ -1055,19 +1332,19 @@ fn change_base_directory_internal(path: String) -> Result<String, String> {
     let canonical = validate_base_dir(&path)?;
 
     update_config(|mut config| {
-        config.base_dir = canonical.to_string_lossy().into_owned();
+        config.base_dir = display_path(&canonical);
         Ok(config)
     })?;
 
     set_current_base_dir(canonical.clone());
 
-    Ok(canonical.to_string_lossy().into_owned())
+    Ok(display_path(&canonical))
 }
 
 fn change_bar_root_parent_internal(path: String) -> Result<String, String> {
     let canonical = validate_base_dir(&path)?;
     let mut config = read_config()?;
-    config.bar_root_parent = canonical.to_string_lossy().into_owned();
+    config.bar_root_parent = display_path(&canonical);
 
     let next_bar_root = canonical.join(".bar");
     fs::create_dir_all(&next_bar_root).map_err(|e| {
@@ -1093,7 +1370,7 @@ fn save_app_config_internal(mut config: BarConfig) -> Result<BarConfig, String> 
     config.bar_root_parent = normalize_bar_root_parent_value(&config.bar_root_parent)?;
     if !config.base_dir.trim().is_empty() {
         let canonical = validate_base_dir(&config.base_dir)?;
-        config.base_dir = canonical.to_string_lossy().into_owned();
+        config.base_dir = display_path(&canonical);
     }
     if !matches!(
         config.dialog_typing_speed.as_str(),
@@ -1162,8 +1439,21 @@ async fn add_memory_internal(
         .filter(|tag| !tag.is_empty())
         .collect::<Vec<_>>();
 
-    let vector = normalize_memory_vector(vector, trimmed)?;
     let now = Local::now().timestamp();
+    if !read_config()?.use_experimental_vector_memory {
+        let id = build_memory_id();
+        add_plain_memory(trimmed, &tags, now)?;
+        return Ok(AddMemoryResponse {
+            id,
+            text: trimmed.to_string(),
+            vector: Vec::new(),
+            tags,
+            created_at: now,
+            updated_at: now,
+        });
+    }
+
+    let vector = normalize_memory_vector(vector, trimmed)?;
     let record = MemoryRecord {
         id: build_memory_id(),
         text,
@@ -1183,6 +1473,25 @@ async fn add_memory_internal(
         created_at: record.created_at,
         updated_at: record.updated_at,
     })
+}
+
+async fn retrieve_memory_internal(
+    text: Option<String>,
+    vector: Option<Vec<f32>>,
+) -> Result<Vec<String>, String> {
+    if !read_config()?.use_experimental_vector_memory {
+        let _query = text.unwrap_or_default();
+        let memory = read_plain_memory()?;
+        return Ok(if memory.is_empty() {
+            Vec::new()
+        } else {
+            vec![memory]
+        });
+    }
+
+    let vector = normalize_memory_vector(vector, "")?;
+    let uri = memory_db_dir()?.to_string_lossy().into_owned();
+    lance::retrieve_memory_texts(&uri, vector).await
 }
 
 #[tauri::command]
@@ -1277,6 +1586,7 @@ fn get_base(
 fn mix_data_drink(
     file_paths: Option<Vec<String>>,
     ingredients: Option<Vec<String>>,
+    drink_name: Option<String>,
 ) -> Result<MixDataDrinkResponse, String> {
     let selected_paths = if let Some(paths) = file_paths {
         paths
@@ -1288,7 +1598,7 @@ fn mix_data_drink(
     if selected_paths.is_empty() {
         return Err("file_paths cannot be empty".to_string());
     }
-    stage_files_for_drink(selected_paths)
+    stage_files_for_drink(selected_paths, drink_name)
 }
 
 #[tauri::command]
@@ -1317,16 +1627,22 @@ async fn add_memory(
 }
 
 #[tauri::command]
-async fn retrive_memory(vector: Vec<f32>) -> Result<String, ApiError> {
-    let vector = normalize_memory_vector(Some(vector), "").map_err(|error| ApiError { error })?;
-    let uri = memory_db_dir()
-        .map_err(|error| ApiError { error })?
-        .to_string_lossy()
-        .into_owned();
-    let memories = lance::retrieve_memory_texts(&uri, vector)
+async fn retrive_memory(
+    text: Option<String>,
+    vector: Option<Vec<f32>>,
+) -> Result<String, ApiError> {
+    let memories = retrieve_memory_internal(text, vector)
         .await
         .map_err(|error| ApiError { error })?;
     Ok(memories.join("\n"))
+}
+
+#[tauri::command]
+fn get_plain_memory() -> Result<String, String> {
+    if read_config()?.use_experimental_vector_memory {
+        return Ok(String::new());
+    }
+    read_plain_memory()
 }
 
 #[tauri::command]
@@ -1425,7 +1741,7 @@ async fn mix_data_drink_handler(
         Vec::new()
     };
 
-    let result = stage_files_for_drink(selected_paths)
+    let result = stage_files_for_drink(selected_paths, req.drink_name)
         .map_err(|error| (StatusCode::BAD_REQUEST, Json(ApiError { error })))?;
     Ok(Json(result))
 }
@@ -1434,7 +1750,12 @@ async fn finalize_drink_handler(
     State(_state): State<Arc<ApiState>>,
     Json(req): Json<FinalizeDrinkRequest>,
 ) -> Result<Json<FinalizeDrinkResponse>, (StatusCode, Json<ApiError>)> {
-    let result = finalize_drink_internal(&req.drink_id, &req.action)
+    let drink_id = match req.drink_id {
+        Some(drink_id) if !drink_id.trim().is_empty() => drink_id,
+        _ => resolve_pending_drink_id(req.drink_name.as_deref().unwrap_or_default())
+            .map_err(|error| (StatusCode::BAD_REQUEST, Json(ApiError { error })))?,
+    };
+    let result = finalize_drink_internal(&drink_id, &req.action)
         .map_err(|error| (StatusCode::BAD_REQUEST, Json(ApiError { error })))?;
     Ok(Json(result))
 }
@@ -1462,16 +1783,20 @@ async fn retrieve_memory_handler(
     State(_state): State<Arc<ApiState>>,
     Json(req): Json<RetrieveMemoryRequest>,
 ) -> Result<Json<Vec<String>>, (StatusCode, Json<ApiError>)> {
-    let vector = normalize_memory_vector(Some(req.vector), "")
-        .map_err(|error| (StatusCode::BAD_REQUEST, Json(ApiError { error })))?;
-    let uri = memory_db_dir()
-        .map_err(|error| (StatusCode::BAD_REQUEST, Json(ApiError { error })))?
-        .to_string_lossy()
-        .into_owned();
-    let memories = lance::retrieve_memory_texts(&uri, vector)
+    let memories = retrieve_memory_internal(req.text, req.vector)
         .await
         .map_err(|error| (StatusCode::BAD_REQUEST, Json(ApiError { error })))?;
     Ok(Json(memories))
+}
+
+async fn memory_backend_handler(
+    State(_state): State<Arc<ApiState>>,
+) -> Result<Json<MemoryBackendResponse>, (StatusCode, Json<ApiError>)> {
+    let config =
+        read_config().map_err(|error| (StatusCode::BAD_REQUEST, Json(ApiError { error })))?;
+    Ok(Json(MemoryBackendResponse {
+        use_experimental_vector_memory: config.use_experimental_vector_memory,
+    }))
 }
 
 async fn start_local_api() -> Result<(), String> {
@@ -1485,6 +1810,7 @@ async fn start_local_api() -> Result<(), String> {
         .route("/base/delete", post(permanently_delete_handler))
         .route("/memory/add", post(add_memory_handler))
         .route("/memory/retrieve", post(retrieve_memory_handler))
+        .route("/memory/backend", get(memory_backend_handler))
         .route("/time", get(get_time_and_date))
         .layer(CorsLayer::permissive())
         .with_state(state);
@@ -1573,6 +1899,8 @@ pub fn run() {
             get_startup_context,
             add_memory,
             retrive_memory,
+            get_plain_memory,
+            smoke_temp_file,
             check_lance_connection,
             get_time_and_date,
             set_ghost_mode,

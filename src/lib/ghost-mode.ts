@@ -13,6 +13,8 @@ const appWindow = isTauriApp ? getCurrentWindow() : null;
 const isMacOS =
   typeof navigator !== "undefined" &&
   /(Mac|iPhone|iPad|iPod)/i.test(navigator.userAgent);
+const isWindows =
+  typeof navigator !== "undefined" && /Windows/i.test(navigator.userAgent);
 
 let currentIgnoreState: boolean | null = null;
 let recoveryIntervalId: number | null = null;
@@ -87,14 +89,17 @@ async function isCursorOverClickableRegion(): Promise<boolean> {
     primaryMonitor(),
   ]);
 
-  // tao reports the global cursor using the primary monitor scale factor on
-  // macOS, while a window position uses the window monitor scale factor.
-  // Convert both back to desktop logical coordinates before subtracting.
-  const cursorScaleFactor = primary?.scaleFactor ?? windowScaleFactor;
+  // macOS reports the global cursor using the primary monitor scale factor;
+  // Windows reports both values in physical pixels. Convert both to local
+  // CSS pixels before hit-testing.
+  const cursorScaleFactor = isMacOS
+    ? (primary?.scaleFactor ?? windowScaleFactor)
+    : windowScaleFactor;
+  const windowPositionScaleFactor = windowScaleFactor;
   const localX =
-    cursor.x / cursorScaleFactor - outerPosition.x / windowScaleFactor;
+    cursor.x / cursorScaleFactor - outerPosition.x / windowPositionScaleFactor;
   const localY =
-    cursor.y / cursorScaleFactor - outerPosition.y / windowScaleFactor;
+    cursor.y / cursorScaleFactor - outerPosition.y / windowPositionScaleFactor;
 
   if (
     localX < 0 ||
@@ -118,7 +123,7 @@ async function isDevtoolsOpen(): Promise<boolean> {
 }
 
 export const startGhostModeRecovery = () => {
-  if (!isMacOS || recoveryIntervalId !== null) {
+  if ((!isMacOS && !isWindows) || recoveryIntervalId !== null) {
     return;
   }
 
@@ -151,7 +156,10 @@ export const stopGhostModeRecovery = () => {
   }
 };
 
-export const shouldUseGhostModeRecovery = isTauriApp && isMacOS;
+// Windows can keep the native window in click-through mode when a route is
+// mounted beneath an already stationary cursor, so mouseenter alone is not
+// reliable there either.
+export const shouldUseGhostModeRecovery = isTauriApp && (isMacOS || isWindows);
 
 export const ghostModeRegionProps = {
   "data-ghost-click-region": "true",

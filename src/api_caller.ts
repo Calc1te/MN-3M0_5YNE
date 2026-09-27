@@ -7,6 +7,7 @@ import { invoke } from "@tauri-apps/api/core";
 import i18n, { getCurrentLanguage } from "./i18n";
 import { getRuntimeApiKey } from "@/lib/api-key";
 import {
+  getAppConfig,
   getRuntimeLlmConfig,
   type RuntimeLlmConfig,
 } from "@/lib/app-config";
@@ -15,6 +16,8 @@ import {
   recordMcpCallStart,
 } from "@/lib/mcp-call-history";
 import { beginLlmRequest, trackLlmRequest } from "@/lib/llm-request-state";
+import { performSmoking } from "@/uiControllers/smoking";
+import { changeBartenderState, normalizeBartenderState } from "@/uiControllers/bartender";
 
 export type Role = "user" | "assistant" | "system";
 
@@ -135,7 +138,7 @@ async function resolveLlmConfig(
 function getSystemPrompt(): string {
   const language = getCurrentLanguage();
   const t = i18n.getFixedT(language);
-  return `${t("prompts.system")}\n\n${t("prompts.toolWorkflow")}`;
+  return `${t("prompts.system")}\n\n${t("prompts.smokingStatePolicy")}\n\n${t("prompts.toolWorkflow")}`;
 }
 
 interface StartupContext {
@@ -175,15 +178,26 @@ async function buildStartupLine(): Promise<string> {
 
 async function getSystemPromptWithContext(): Promise<string> {
   const language = getCurrentLanguage();
+  let base: string;
   if (cachedSystemPrompt?.language === language) {
-    return cachedSystemPrompt.content;
+    base = cachedSystemPrompt.content;
+  } else {
+    base = getSystemPrompt();
+    cachedSystemPrompt = { language, content: base };
   }
 
-  const base = getSystemPrompt();
-  const extra = await buildStartupLine();
-  const content = extra ? `${base}\n\n${extra}` : base;
-  cachedSystemPrompt = { language, content };
-  return content;
+  const [extra, plainMemory] = await Promise.all([
+    buildStartupLine(),
+    invoke<string>("get_plain_memory").catch((error: unknown) => {
+      console.warn("Failed to load plain memory:", error);
+      return "";
+    }),
+  ]);
+  const t = i18n.getFixedT(language);
+  const memoryContext = plainMemory.trim()
+    ? t("prompts.plainMemoryContext", { memory: plainMemory.trim() })
+    : "";
+  return [base, memoryContext, extra].filter(Boolean).join("\n\n");
 }
 
 function getContextCharBudget(): number {
@@ -508,6 +522,41 @@ export async function createMemoryVector(
   };
 }
 
+export interface SavedMemory {
+  id: string;
+  text: string;
+  vector: number[];
+  tags: string[];
+  created_at: number;
+  updated_at: number;
+}
+
+export async function saveLongTermMemory(
+  text: string,
+  tags: string[] = [],
+  signal?: AbortSignal,
+): Promise<SavedMemory> {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    throw new Error("Memory text cannot be empty");
+  }
+  const config = await getAppConfig();
+  if (!config.Use_Experimental_Vector_Memory) {
+    return invoke<SavedMemory>("add_memory", { text: trimmed, tags });
+  }
+
+  const memory = await createMemoryVector(
+    buildMemoryEmbeddingText(trimmed, tags),
+    trimmed,
+    signal,
+  );
+  return invoke<SavedMemory>("add_memory", {
+    text: trimmed,
+    tags,
+    vector: Array.from(memory.vector),
+  });
+}
+
 export async function summarizeExitMemory(context: {
   language: string;
   baseDir?: string;
@@ -699,15 +748,20 @@ export async function runMcpToolCallsDetailed(
   for (const call of calls) {
     signal?.throwIfAborted();
     const historyId = recordMcpCallStart(call);
-    // change_state is a frontend-only tool, don't send it to the backend
-    if (call.tool === "change_state") {
-      const result = { state: call.args.state };
-      recordMcpCallFinish(historyId, { result });
-      results.push({ call, result });
-      continue;
-    }
-
     try {
+      // change_state remains P's original tool; entering smoking also consumes a temp file.
+      if (call.tool === "change_state") {
+        const requestedState = String(call.args.state ?? "").trim();
+        const state = normalizeBartenderState(
+          requestedState.toLowerCase() === "smoling" ? "smoking" : requestedState,
+        );
+        const result = state === "smoking"
+          ? { state, file_name: (await performSmoking()).file_name }
+          : { state: changeBartenderState(state) };
+        recordMcpCallFinish(historyId, { result });
+        results.push({ call, result });
+        continue;
+      }
       const result = await transport.callTool(call.tool, call.args, signal);
       recordMcpCallFinish(historyId, { result });
       results.push({ call, result });
@@ -727,6 +781,34 @@ export async function runMcpToolCallsDetailed(
   return results;
 }
 
+function toolResultForModel(
+  tool: McpToolCall["tool"],
+  result: unknown,
+): unknown {
+  if (typeof result !== "object" || result === null) {
+    return result;
+  }
+
+  const payload = result as Record<string, unknown>;
+  if (tool === "mix_data_drink") {
+    return {
+      message: payload.message,
+      drink_name: payload.drink_name,
+      staged_count: payload.staged_count,
+    };
+  }
+  if (tool === "finalize_drink") {
+    return {
+      drink_name: payload.drink_name,
+      action: payload.action,
+      affected_count: Array.isArray(payload.affected_paths)
+        ? payload.affected_paths.length
+        : undefined,
+    };
+  }
+  return result;
+}
+
 export function buildToolResultPrompt(toolResults: BartenderToolResult[]): string {
   const language = getCurrentLanguage();
   const t = i18n.getFixedT(language);
@@ -740,6 +822,12 @@ export function buildToolResultPrompt(toolResults: BartenderToolResult[]): strin
   const successfulTools = toolResults
     .filter(({ error }) => !error)
     .map(({ call }) => call.tool);
+  const smokingFailed = toolResults.some(
+    ({ call, error }) =>
+      isSmokingStateCall(call) &&
+      Boolean(error) &&
+      !error?.startsWith("Skipped duplicate smoking attempt"),
+  );
 
   return [
     t("prompts.toolResultsFinished"),
@@ -747,6 +835,7 @@ export function buildToolResultPrompt(toolResults: BartenderToolResult[]): strin
     t("prompts.toolResultsNextAction", {
       tools: successfulTools.join(", ") || "none",
     }),
+    ...(smokingFailed ? [t("prompts.smokeFailure")] : []),
     ...(hasBaseList ? [baseListGuidance] : []),
     JSON.stringify(
       toolResults.map(({ call, result, error }) => ({
@@ -757,7 +846,7 @@ export function buildToolResultPrompt(toolResults: BartenderToolResult[]): strin
               presentation_note: baseListPresentationNote,
             }
           : {}),
-        result,
+        result: toolResultForModel(call.tool, result),
         error,
       })),
       null,
@@ -772,7 +861,14 @@ export function buildToolLoopLimitPrompt(): string {
 }
 
 function toolCallSignature(call: McpToolCall): string {
+  if (isSmokingStateCall(call)) return "change_state:smoking";
   return `${call.tool}:${JSON.stringify(call.args)}`;
+}
+
+function isSmokingStateCall(call: McpToolCall): boolean {
+  if (call.tool !== "change_state") return false;
+  const state = String(call.args.state ?? "").trim().toLowerCase();
+  return state === "smoking" || state === "smoling";
 }
 
 function splitToolCallsForRound(
@@ -786,6 +882,7 @@ function splitToolCallsForRound(
   const filteredResults: BartenderToolResult[] = [];
   const discoversBaseFiles = calls.some((call) => call.tool === "base_list");
   const stagesDrink = calls.some((call) => call.tool === "mix_data_drink");
+  let pendingSmoke = false;
 
   for (const call of calls) {
     const waitsForBaseList =
@@ -793,8 +890,8 @@ function splitToolCallsForRound(
       (call.tool === "get_base" ||
         call.tool === "mix_data_drink" ||
         call.tool === "finalize_drink");
-    const waitsForDrinkId = stagesDrink && call.tool === "finalize_drink";
-    if (waitsForBaseList || waitsForDrinkId) {
+    const waitsForStagedDrink = stagesDrink && call.tool === "finalize_drink";
+    if (waitsForBaseList || waitsForStagedDrink) {
       filteredResults.push({
         call,
         error:
@@ -804,6 +901,16 @@ function splitToolCallsForRound(
     }
 
     const signature = toolCallSignature(call);
+    if (isSmokingStateCall(call)) {
+      if (pendingSmoke || completedSignatures.has(signature)) {
+        filteredResults.push({
+          call,
+          error: "Skipped duplicate smoking attempt in this task.",
+        });
+        continue;
+      }
+      pendingSmoke = true;
+    }
     if (call.tool !== "change_state" && completedSignatures.has(signature)) {
       filteredResults.push({
         call,
@@ -822,6 +929,10 @@ export function rememberSuccessfulToolCalls(
   completedSignatures: Set<string>,
 ): void {
   for (const { call, error } of toolResults) {
+    if (isSmokingStateCall(call)) {
+      completedSignatures.add(toolCallSignature(call));
+      continue;
+    }
     if (!error && call.tool !== "change_state") {
       completedSignatures.add(toolCallSignature(call));
     }
@@ -930,11 +1041,11 @@ async function normalizeToolArgs(
     }
 
     const tags = normalizeMemoryTags(args.tags);
-    const memory = await createMemoryVector(
-      buildMemoryEmbeddingText(text, tags),
-      text,
-      signal,
-    );
+    const config = await getAppConfig();
+    if (!config.Use_Experimental_Vector_Memory) {
+      return { text, tags };
+    }
+    const memory = await createMemoryVector(buildMemoryEmbeddingText(text, tags), text, signal);
     return {
       text,
       tags,
@@ -946,10 +1057,12 @@ async function normalizeToolArgs(
     if (!text) {
       throw new Error("retrieve_memory requires text");
     }
+    const config = await getAppConfig();
+    if (!config.Use_Experimental_Vector_Memory) {
+      return { text };
+    }
     const memory = await createMemoryVector(text, text, signal);
-    return {
-      vector: Array.from(memory.vector),
-    };
+    return { vector: Array.from(memory.vector) };
   }
   return args;
 }

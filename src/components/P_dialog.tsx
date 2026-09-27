@@ -47,8 +47,16 @@ export default function PDialog({
   const typingIntervalMs = getDialogTypingIntervalMs(typingSpeed);
   const dialogTypingSpeed = normalizeDialogTypingSpeed(typingSpeed);
   const audioSrc = `/assets/sounds/Textsound_34_${dialogTypingSpeed}.ogg`;
+
+  // `value` is the streamed `response.assistant` preview. The model can still
+  // be streaming JSON fields (for example toolCalls) after this text has been
+  // rendered, so `isSpeaking` alone would leave the loop running too long.
+  const isActivelyTyping = renderedValue !== value;
   const shouldPlayAudio =
-    isSpeaking && hasStartedTyping && Boolean(value.trim());
+    isSpeaking &&
+    hasStartedTyping &&
+    isActivelyTyping &&
+    Boolean(value.trim());
 
   // Keep this in sync during render so a pending play() can see a newer
   // isSpeaking/value state even before its effect runs.

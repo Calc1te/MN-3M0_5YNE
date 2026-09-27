@@ -14,6 +14,7 @@ export interface AppConfig {
   Chat_Model: string;
   Embedding_Base_URL: string;
   Embedding_Model: string;
+  Use_Experimental_Vector_Memory: boolean;
   Setup_Completed: boolean;
   Remember_On_Exit: boolean;
   Always_On_Top: boolean;
@@ -69,6 +70,7 @@ export function buildDefaultAppConfig(): AppConfig {
     Chat_Model: "",
     Embedding_Base_URL: "",
     Embedding_Model: "",
+    Use_Experimental_Vector_Memory: false,
     Setup_Completed: false,
     Remember_On_Exit: false,
     Always_On_Top: false,

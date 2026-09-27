@@ -1,0 +1,3 @@
+# Platform-specific protoc setup is handled by scripts/with-env.mjs.
+# Keeping it out of Cargo's global [env] table prevents a Windows-only bundled
+# path from overriding the system protoc on macOS and Linux.

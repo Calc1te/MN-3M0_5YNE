@@ -11,6 +11,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/8bit/input";
+import { ghostModeRegionProps } from "@/lib/ghost-mode";
 import {
   Select,
   SelectContent,
@@ -18,6 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/8bit/select";
+import { Checkbox } from "@/components/ui/8bit/checkbox";
 import {
   buildDefaultAppConfig,
   completeInitialSetup,
@@ -32,7 +34,7 @@ import {
 } from "@/lib/language";
 import { cn } from "@/lib/utils";
 
-type SetupStep = "language" | "eula" | "bar" | "base" | "api";
+type SetupStep = "language" | "eula" | "bar" | "base" | "memory" | "api";
 
 const EULA_PATHS: Record<AppLanguage, string> = {
   en: "/assets/EULA/en_us.md",
@@ -65,8 +67,8 @@ export default function InitialSetup({
   const steps = useMemo<SetupStep[]>(
     () =>
       isFriendMode
-        ? ["language", "eula", "bar", "base"]
-        : ["language", "eula", "bar", "base", "api"],
+        ? ["language", "eula", "bar", "base", "memory"]
+        : ["language", "eula", "bar", "base", "memory", "api"],
     [],
   );
   const stepIndex = steps.indexOf(step);
@@ -137,13 +139,15 @@ export default function InitialSetup({
     (step === "eula" && isEulaReady) ||
     (step === "bar" && Boolean(config.Bar_Root_Parent.trim())) ||
     (step === "base" && Boolean(config.Base_Dir.trim())) ||
+    step === "memory" ||
     (step === "api" &&
       Boolean(
         config.API_Key.trim() &&
           config.Chat_Base_URL.trim() &&
           config.Chat_Model.trim() &&
-          config.Embedding_Base_URL.trim() &&
-          config.Embedding_Model.trim(),
+          (!config.Use_Experimental_Vector_Memory ||
+            (config.Embedding_Base_URL.trim() &&
+              config.Embedding_Model.trim())),
       ));
 
   return (
@@ -173,7 +177,7 @@ export default function InitialSetup({
               <SelectTrigger font="normal">
                 <SelectValue placeholder={t("ui.language")} font="normal" />
               </SelectTrigger>
-              <SelectContent font="normal">
+              <SelectContent {...ghostModeRegionProps} font="normal">
                 <SelectItem value="en">English</SelectItem>
                 <SelectItem value="zh-CN">中文</SelectItem>
                 <SelectItem value="jp">日本語</SelectItem>
@@ -221,6 +225,28 @@ export default function InitialSetup({
           />
         )}
 
+        {step === "memory" && (
+          <div className="flex flex-col gap-3">
+            <span className="text-sm">{t("setup.memory")}</span>
+            <label className="flex items-start gap-3 text-sm">
+              <Checkbox
+                checked={config.Use_Experimental_Vector_Memory}
+                onCheckedChange={(checked) =>
+                  updateConfig({ Use_Experimental_Vector_Memory: checked === true })
+                }
+                disabled={isSaving}
+                font="normal"
+              />
+              <span className="flex flex-col gap-1">
+                <span>{t("ui.experimentalVectorMemory")}</span>
+                <span className="text-xs text-white/70">
+                  {t("ui.plainMemoryDefaultHint")}
+                </span>
+              </span>
+            </label>
+          </div>
+        )}
+
         {step === "api" && (
           <div className="flex flex-col gap-3">
             <span className="text-sm">{t("setup.api")}</span>
@@ -246,20 +272,24 @@ export default function InitialSetup({
               font={usesPixelFont ? "normal" : undefined}
               className="bg-foreground text-background placeholder:text-background/60"
             />
-            <Input
-              value={config.Embedding_Base_URL}
-              onChange={(event) => updateConfig({ Embedding_Base_URL: event.target.value })}
-              placeholder={t("ui.embeddingBaseUrlPlaceholder")}
-              font={usesPixelFont ? "normal" : undefined}
-              className="bg-foreground text-background placeholder:text-background/60"
-            />
-            <Input
-              value={config.Embedding_Model}
-              onChange={(event) => updateConfig({ Embedding_Model: event.target.value })}
-              placeholder={t("ui.embeddingModelPlaceholder")}
-              font={usesPixelFont ? "normal" : undefined}
-              className="bg-foreground text-background placeholder:text-background/60"
-            />
+            {config.Use_Experimental_Vector_Memory && (
+              <>
+                <Input
+                  value={config.Embedding_Base_URL}
+                  onChange={(event) => updateConfig({ Embedding_Base_URL: event.target.value })}
+                  placeholder={t("ui.embeddingBaseUrlPlaceholder")}
+                  font={usesPixelFont ? "normal" : undefined}
+                  className="bg-foreground text-background placeholder:text-background/60"
+                />
+                <Input
+                  value={config.Embedding_Model}
+                  onChange={(event) => updateConfig({ Embedding_Model: event.target.value })}
+                  placeholder={t("ui.embeddingModelPlaceholder")}
+                  font={usesPixelFont ? "normal" : undefined}
+                  className="bg-foreground text-background placeholder:text-background/60"
+                />
+              </>
+            )}
           </div>
         )}
 
