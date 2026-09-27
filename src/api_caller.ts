@@ -138,7 +138,7 @@ async function resolveLlmConfig(
 function getSystemPrompt(): string {
   const language = getCurrentLanguage();
   const t = i18n.getFixedT(language);
-  return `${t("prompts.system")}\n\n${t("prompts.smokingStatePolicy")}\n\n${t("prompts.toolWorkflow")}`;
+  return `${t("prompts.system")}\n\n${t("prompts.smokingStatePolicy")}\n\n${t("prompts.toolWorkflow")}\n\n${t("prompts.voiceCalibration")}`;
 }
 
 interface StartupContext {
@@ -755,9 +755,16 @@ export async function runMcpToolCallsDetailed(
         const state = normalizeBartenderState(
           requestedState.toLowerCase() === "smoling" ? "smoking" : requestedState,
         );
-        const result = state === "smoking"
-          ? { state, file_name: (await performSmoking()).file_name }
-          : { state: changeBartenderState(state) };
+        if (state === "smoking") {
+          const smokedFile = await performSmoking();
+          const result = { state };
+          recordMcpCallFinish(historyId, {
+            result: { ...result, file_name: smokedFile.file_name },
+          });
+          results.push({ call, result });
+          continue;
+        }
+        const result = { state: changeBartenderState(state) };
         recordMcpCallFinish(historyId, { result });
         results.push({ call, result });
         continue;
@@ -869,6 +876,14 @@ function isSmokingStateCall(call: McpToolCall): boolean {
   if (call.tool !== "change_state") return false;
   const state = String(call.args.state ?? "").trim().toLowerCase();
   return state === "smoking" || state === "smoling";
+}
+
+export function needsToolFollowUp(toolResults: BartenderToolResult[]): boolean {
+  return toolResults.some(
+    ({ call, error }) =>
+      !isSmokingStateCall(call) ||
+      (Boolean(error) && !error?.startsWith("Skipped duplicate smoking attempt")),
+  );
 }
 
 function splitToolCallsForRound(
@@ -985,6 +1000,11 @@ export async function chatWithBartenderAndTools(
     ];
     rememberSuccessfulToolCalls(roundResults, completedSignatures);
     allToolResults.push(...roundResults);
+
+    if (!needsToolFollowUp(roundResults)) {
+      finalReply = { ...finalReply, toolCalls: [] };
+      break;
+    }
 
     const resultPrompt = buildToolResultPrompt(roundResults);
     finalReply = await chatWithBartender(resultPrompt, followUpHistory, signal);
