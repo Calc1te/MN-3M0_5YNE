@@ -8,6 +8,7 @@ import {
   chatWithBartenderStream,
   createLocalMcpTransport,
   filterToolCallsForRound,
+  needsToolFollowUp,
   rememberSuccessfulToolCalls,
   runMcpToolCallsDetailed,
   type BartenderToolResult,
@@ -363,6 +364,11 @@ export default function BartenderMain({
           rememberSuccessfulToolCalls(toolResults, completedToolSignatures);
           applyToolStateChanges(toolResults);
 
+          if (!needsToolFollowUp(toolResults)) {
+            response = { ...response, toolCalls: [] };
+            break;
+          }
+
           const resultPrompt = buildToolResultPrompt(toolResults);
           setIsReplyComplete(false);
           setIsSpeaking(true);
@@ -507,7 +513,7 @@ export default function BartenderMain({
       remainingMs: 0,
     });
     await runConversation(
-      `${t("prompts.idle_trigger")}\n\n${t("prompts.idleWorkflow")}`,
+      `${t("prompts.idle_trigger")}\n\n${t("prompts.idleWorkflow")}\n\n${t("prompts.voiceCalibration")}`,
       {
         persistUserInput: false,
         clearInputAfterReply: false,
