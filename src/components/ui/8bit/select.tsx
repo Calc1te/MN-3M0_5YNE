@@ -2,6 +2,7 @@ import type * as SelectPrimitive from "@radix-ui/react-select";
 import { type VariantProps, cva } from "class-variance-authority";
 
 import { cn } from "@/lib/utils";
+import { ghostModeRegionProps } from "@/lib/ghost-mode";
 
 import {
   Select as ShadcnSelect,
@@ -113,6 +114,7 @@ function SelectContent({
 
   return (
     <ShadcnSelectContent
+      {...ghostModeRegionProps}
       className={cn(
         font !== "normal" && "retro",
         className,

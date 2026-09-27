@@ -1,16 +1,23 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
+  MAX_BARTENDER_TOOL_ROUNDS,
+  buildToolLoopLimitPrompt,
   buildToolResultPrompt,
   chatWithBartenderStream,
   createLocalMcpTransport,
+  filterToolCallsForRound,
+  rememberSuccessfulToolCalls,
   runMcpToolCallsDetailed,
   type BartenderToolResult,
   type ChatTurn,
+  type McpToolCall,
 } from "@/api_caller";
 import PDialog from "@/components/P_dialog";
-import PSprite from "@/components/P_sprite";
+import PFileDropTarget from "@/components/P_file_drop_target";
+import type { DrinkActionEvent } from "@/components/bar_counter_drink_menu";
+import { Textarea } from "@/components/ui/8bit/textarea";
 import UserInput from "@/components/user_input";
 import {
   buildDefaultAppConfig,
@@ -29,14 +36,22 @@ import {
 } from "@/lib/language";
 import { cn } from "@/lib/utils";
 import {
-  changeBartenderState,
-  isBartenderState,
-} from "@/uiControllers/bartender";
+  clearBarCounterDrink,
+  showBarCounterDrink,
+} from "@/uiControllers/bar-counter-drink";
 import { setIdleTriggerState } from "@/uiControllers/idle-trigger";
+import { performSmoking } from "@/uiControllers/smoking";
 
 interface BartenderMainProps {
   showSetupCompletePrompt?: boolean;
   onSetupCompletePromptShown?: () => void;
+}
+
+const SMOKE_IDLE_MIN_MS = 2 * 60 * 1000;
+const SMOKE_IDLE_RANDOM_MS = 3 * 60 * 1000;
+
+function nextSmokeIdleDelay(): number {
+  return SMOKE_IDLE_MIN_MS + Math.random() * SMOKE_IDLE_RANDOM_MS;
 }
 
 export default function BartenderMain({
@@ -57,7 +72,9 @@ export default function BartenderMain({
   const [toolStatus, setToolStatus] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isReplyComplete, setIsReplyComplete] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [setupGuideStep, setSetupGuideStep] = useState<number | null>(null);
   const historyRef = useRef(history);
   const isLoadingRef = useRef(isLoading);
   const configRef = useRef(config);
@@ -65,9 +82,34 @@ export default function BartenderMain({
   const idleCountdownRef = useRef<number | null>(null);
   const idleDeadlineRef = useRef<number | null>(null);
   const idleRunRef = useRef(false);
+  const retainedToolReplyTimeoutRef = useRef<number | null>(null);
+  const activeConversationRef = useRef<{
+    controller: AbortController;
+    restoreInput: string | null;
+  } | null>(null);
 
-  // Get the latest message from history or current reply
-  const displayedMessage = reply || (history.length > 0 && history[history.length - 1]?.role === "assistant" ? history[history.length - 1].content : "");
+  // While a response is streaming, only display the current reply. Falling back
+  // to history here would replay the previous answer before new text arrives.
+  const latestAssistantMessage =
+    history.length > 0 && history[history.length - 1]?.role === "assistant"
+      ? history[history.length - 1].content
+      : "";
+  const displayedMessage = isSpeaking ? reply : reply || latestAssistantMessage;
+
+  const handleDialogTypingComplete = useCallback(() => {
+    setIsSpeaking(false);
+  }, []);
+
+  const handleDrinkActionError = useCallback((message: string) => {
+    setError(message || null);
+  }, []);
+
+  const clearRetainedToolReplyTimeout = () => {
+    if (retainedToolReplyTimeoutRef.current !== null) {
+      window.clearTimeout(retainedToolReplyTimeoutRef.current);
+      retainedToolReplyTimeoutRef.current = null;
+    }
+  };
 
   useEffect(() => {
     historyRef.current = history;
@@ -96,12 +138,30 @@ export default function BartenderMain({
       return;
     }
 
+    clearRetainedToolReplyTimeout();
     setReply(t("prompts.setup_complete"));
     setToolStatus("");
     setError(null);
     setIsSpeaking(false);
+    setSetupGuideStep(0);
     onSetupCompletePromptShown?.();
   }, [onSetupCompletePromptShown, showSetupCompletePrompt, t]);
+
+  const setupGuideSteps = [
+    t("setup.guideDragP"),
+    t("setup.guideOpenSettings"),
+    t("setup.guideDropFiles"),
+    t("setup.guideDrinkActions"),
+  ];
+
+  const handleSetupGuideClick = () => {
+    setSetupGuideStep((current) => {
+      if (current === null || current >= setupGuideSteps.length - 1) {
+        return null;
+      }
+      return current + 1;
+    });
+  };
 
   const clearIdleTimer = () => {
     if (idleTimerRef.current !== null) {
@@ -161,38 +221,41 @@ export default function BartenderMain({
   };
 
   const applyToolStateChanges = (toolResults: BartenderToolResult[]) => {
-    for (const { call, result } of toolResults) {
-      if (call.tool !== "change_state") {
+    for (const { call, result, error } of toolResults) {
+      if (error) {
         continue;
       }
 
-      const resultState =
-        typeof result === "object" &&
-        result !== null &&
-        "state" in result &&
-        typeof (result as { state?: unknown }).state === "string"
-          ? String((result as { state?: unknown }).state)
-          : null;
-      const fallbackState =
-        typeof call.args.state === "string" ? call.args.state : null;
-      const rawState = resultState ?? fallbackState;
-      if (!rawState) {
-        console.warn("MCP change_state did not return a state.");
+      if (call.tool === "mix_data_drink") {
+        const drinkId =
+          typeof result === "object" &&
+          result !== null &&
+          "drink_id" in result &&
+          typeof (result as { drink_id?: unknown }).drink_id === "string"
+            ? (result as { drink_id: string }).drink_id
+            : null;
+        if (drinkId) {
+          showBarCounterDrink(drinkId);
+        } else {
+          console.warn("MCP mix_data_drink did not return a drink_id.");
+        }
         continue;
       }
 
-      const normalized = rawState.trim().toLowerCase();
-      const mapped =
-        normalized === "smoling"
-          ? "smoking"
-          : normalized === "lookingatyou"
-            ? "lookingAtYou"
-            : normalized;
-      if (!isBartenderState(mapped)) {
-        console.warn("Unknown bartender state from MCP:", rawState);
+      if (call.tool === "finalize_drink") {
+        const drinkId =
+          typeof result === "object" &&
+          result !== null &&
+          "drink_id" in result &&
+          typeof (result as { drink_id?: unknown }).drink_id === "string"
+            ? (result as { drink_id: string }).drink_id
+            : typeof call.args.drink_id === "string"
+              ? call.args.drink_id
+              : undefined;
+        clearBarCounterDrink(drinkId);
         continue;
       }
-      changeBartenderState(mapped);
+
     }
   };
 
@@ -202,79 +265,174 @@ export default function BartenderMain({
       persistUserInput: boolean;
       clearInputAfterReply: boolean;
       automatic: boolean;
+      restoreInputOnCancel: boolean;
+      persistedUserContent?: string;
+      allowedTools?: McpToolCall["tool"][];
     },
   ) => {
+    if (activeConversationRef.current) {
+      return;
+    }
+
+    const controller = new AbortController();
+    activeConversationRef.current = {
+      controller,
+      restoreInput: options.restoreInputOnCancel ? prompt : null,
+    };
+    let waitForDialogTyping = false;
     const baseHistory = historyRef.current;
     clearIdleTimer();
+    clearRetainedToolReplyTimeout();
     setIsLoading(true);
     isLoadingRef.current = true;
     setIsSpeaking(true);
+    setIsReplyComplete(false);
     setError(null);
     setToolStatus("");
     setReply("");
 
     try {
-      const response = await chatWithBartenderStream(
+      const applyToolPolicy = (response: Awaited<ReturnType<typeof chatWithBartenderStream>>) => {
+        if (!options.allowedTools) {
+          return response;
+        }
+        const allowedTools = new Set(options.allowedTools);
+        return {
+          ...response,
+          toolCalls: response.toolCalls.filter((call) =>
+            allowedTools.has(call.tool),
+          ),
+        };
+      };
+
+      let response = applyToolPolicy(await chatWithBartenderStream(
         prompt,
         baseHistory,
         setReply,
-      );
+        controller.signal,
+      ));
       const hasToolCalls = response.toolCalls.length > 0;
 
-      setReply(response.assistant);
-      setIsSpeaking(false);
       if (options.clearInputAfterReply) {
         setInput("");
       }
 
       if (hasToolCalls) {
+        setReply(response.assistant);
+        setIsReplyComplete(true);
         setToolStatus(
           t("ui.toolCalling") || "P is rummaging through the file pile...",
         );
-        const toolResults = await runMcpToolCallsDetailed(
-          response.toolCalls,
-          createLocalMcpTransport(),
-        );
-        applyToolStateChanges(toolResults);
+        retainedToolReplyTimeoutRef.current = window.setTimeout(() => {
+          setReply((currentReply) =>
+            currentReply === response.assistant ? "" : currentReply,
+          );
+          retainedToolReplyTimeoutRef.current = null;
+        }, 30_000);
 
-        const followUpHistory: ChatTurn[] = [
+        let followUpHistory: ChatTurn[] = [
           ...baseHistory,
-          ...(options.persistUserInput
-            ? [{ role: "user" as const, content: prompt }]
-            : []),
-          { role: "assistant", content: JSON.stringify(response) },
+          { role: "user", content: prompt },
         ];
-        setReply("");
-        setIsSpeaking(true);
-        const finalReply = await chatWithBartenderStream(
-          buildToolResultPrompt(toolResults),
-          followUpHistory,
-          setReply,
-        );
+        const completedToolSignatures = new Set<string>();
+        const transport = createLocalMcpTransport();
 
+        for (
+          let round = 0;
+          response.toolCalls.length > 0 && round < MAX_BARTENDER_TOOL_ROUNDS;
+          round += 1
+        ) {
+          followUpHistory = [
+            ...followUpHistory,
+            { role: "assistant", content: JSON.stringify(response) },
+          ];
+          const { pendingCalls, filteredResults } = filterToolCallsForRound(
+            response.toolCalls,
+            completedToolSignatures,
+          );
+          const toolResults = [
+            ...(pendingCalls.length > 0
+              ? await runMcpToolCallsDetailed(
+                  pendingCalls,
+                  transport,
+                  controller.signal,
+                )
+              : []),
+            ...filteredResults,
+          ];
+          rememberSuccessfulToolCalls(toolResults, completedToolSignatures);
+          applyToolStateChanges(toolResults);
+
+          const resultPrompt = buildToolResultPrompt(toolResults);
+          setIsReplyComplete(false);
+          setIsSpeaking(true);
+          response = applyToolPolicy(await chatWithBartenderStream(
+            resultPrompt,
+            followUpHistory,
+            (text) => {
+              if (!text.trim()) {
+                return;
+              }
+              clearRetainedToolReplyTimeout();
+              setReply(text);
+            },
+            controller.signal,
+          ));
+          followUpHistory = [
+            ...followUpHistory,
+            { role: "user", content: resultPrompt },
+          ];
+        }
+
+        if (response.toolCalls.length > 0) {
+          followUpHistory = [
+            ...followUpHistory,
+            { role: "assistant", content: JSON.stringify(response) },
+          ];
+          response = applyToolPolicy(await chatWithBartenderStream(
+            buildToolLoopLimitPrompt(),
+            followUpHistory,
+            (text) => {
+              if (text.trim()) {
+                clearRetainedToolReplyTimeout();
+                setReply(text);
+              }
+            },
+            controller.signal,
+          ));
+        }
+
+        clearRetainedToolReplyTimeout();
         setToolStatus("");
-        setReply(finalReply.assistant);
-        setIsSpeaking(false);
+        setReply(response.assistant);
+        setIsReplyComplete(true);
+        waitForDialogTyping = true;
 
+        const persistedUserContent = options.persistedUserContent ?? prompt;
         const nextHistory = options.persistUserInput
           ? [
               ...baseHistory,
-              { role: "user" as const, content: prompt },
-              { role: "assistant" as const, content: finalReply.assistant },
+              { role: "user" as const, content: persistedUserContent },
+              { role: "assistant" as const, content: response.assistant },
             ]
           : [
               ...baseHistory,
-              { role: "assistant" as const, content: finalReply.assistant },
+              { role: "assistant" as const, content: response.assistant },
             ];
         setBartenderHistory(nextHistory);
         setHistory(nextHistory);
         return;
       }
 
+      setReply(response.assistant);
+      setIsReplyComplete(true);
+      waitForDialogTyping = true;
+
+      const persistedUserContent = options.persistedUserContent ?? prompt;
       const newHistory: ChatTurn[] = options.persistUserInput
         ? [
             ...baseHistory,
-            { role: "user", content: prompt },
+            { role: "user", content: persistedUserContent },
             {
               role: "assistant",
               content: response.assistant,
@@ -290,6 +448,15 @@ export default function BartenderMain({
       setBartenderHistory(newHistory);
       setHistory(newHistory);
     } catch (err) {
+      if (controller.signal.aborted) {
+        clearRetainedToolReplyTimeout();
+        setReply("");
+        setToolStatus("");
+        setError(null);
+        setIsSpeaking(false);
+        setIsReplyComplete(false);
+        return;
+      }
       const errorMessage =
         err instanceof Error ? err.message : "Unknown error occurred";
       setError(errorMessage);
@@ -298,11 +465,34 @@ export default function BartenderMain({
       if (options.automatic) {
         idleRunRef.current = false;
       }
-      setIsSpeaking(false);
-      setIsLoading(false);
-      isLoadingRef.current = false;
-      resetIdleTimer();
+      if (!waitForDialogTyping) {
+        setIsSpeaking(false);
+      }
+      if (activeConversationRef.current?.controller === controller) {
+        activeConversationRef.current = null;
+        setIsLoading(false);
+        isLoadingRef.current = false;
+        resetIdleTimer();
+      }
     }
+  };
+
+  const handleCancelConversation = () => {
+    const activeConversation = activeConversationRef.current;
+    if (!activeConversation) {
+      return;
+    }
+
+    if (activeConversation.restoreInput !== null) {
+      setInput(activeConversation.restoreInput);
+    }
+    clearRetainedToolReplyTimeout();
+    setReply("");
+    setToolStatus("");
+    setError(null);
+    setIsSpeaking(false);
+    setIsReplyComplete(false);
+    activeConversation.controller.abort();
   };
 
   const handleIdleTrigger = async () => {
@@ -316,11 +506,15 @@ export default function BartenderMain({
       running: true,
       remainingMs: 0,
     });
-    await runConversation(t("prompts.idle_trigger"), {
-      persistUserInput: false,
-      clearInputAfterReply: false,
-      automatic: true,
-    });
+    await runConversation(
+      `${t("prompts.idle_trigger")}\n\n${t("prompts.idleWorkflow")}`,
+      {
+        persistUserInput: false,
+        clearInputAfterReply: false,
+        automatic: true,
+        restoreInputOnCancel: false,
+      },
+    );
   };
 
   const handleSendMessage = async () => {
@@ -331,8 +525,131 @@ export default function BartenderMain({
       persistUserInput: true,
       clearInputAfterReply: true,
       automatic: false,
+      restoreInputOnCancel: true,
     });
   };
+
+  const handleDroppedFiles = async (paths: string[]) => {
+    if (isLoadingRef.current) {
+      return;
+    }
+
+    const uniquePaths = [...new Set(paths.map((path) => path.trim()).filter(Boolean))];
+    if (uniquePaths.length === 0) {
+      return;
+    }
+
+    await runConversation(
+      t("prompts.fileDrop", {
+        count: uniquePaths.length,
+        paths: JSON.stringify(uniquePaths, null, 2),
+      }),
+      {
+        persistUserInput: true,
+        clearInputAfterReply: false,
+        automatic: false,
+        restoreInputOnCancel: false,
+      },
+    );
+  };
+
+  const handleDrinkActionComplete = ({
+    drinkName,
+    action,
+  }: DrinkActionEvent) => {
+    const actionText = t(
+      action === "drink"
+        ? "ui.drinkActionHistoryDrink"
+        : "ui.drinkActionHistoryRestore",
+      { drink: drinkName },
+    );
+    void runConversation(
+      t("prompts.drinkAction", {
+        action: t(
+          action === "drink" ? "ui.drinkMenuDrink" : "ui.drinkMenuRestore",
+        ),
+        drink: drinkName,
+      }),
+      {
+        persistUserInput: true,
+        persistedUserContent: actionText,
+        clearInputAfterReply: false,
+        automatic: false,
+        restoreInputOnCancel: false,
+        allowedTools: ["change_state"],
+      },
+    );
+  };
+
+  useEffect(() => {
+    return () => {
+      activeConversationRef.current?.controller.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    let timer: number | null = null;
+    let disposed = false;
+    let smokedThisIdlePeriod = false;
+
+    const schedule = (delayMs: number) => {
+      if (timer !== null) window.clearTimeout(timer);
+      if (smokedThisIdlePeriod) return;
+      timer = window.setTimeout(async () => {
+        timer = null;
+        if (disposed) return;
+        if (document.visibilityState === "hidden") return;
+        if (isLoadingRef.current || activeConversationRef.current) {
+          schedule(60_000);
+          return;
+        }
+
+        smokedThisIdlePeriod = true;
+        try {
+          await performSmoking();
+        } catch (smokeError) {
+          console.warn("P could not smoke a temp file:", smokeError);
+          if (!disposed && !activeConversationRef.current) {
+            await runConversation(
+              `${i18n.t("prompts.smokeFailure")}\n\n${i18n.t("prompts.smokeFailureIdle")}`,
+              {
+                persistUserInput: false,
+                clearInputAfterReply: false,
+                automatic: false,
+                restoreInputOnCancel: false,
+                allowedTools: [],
+              },
+            );
+          }
+        }
+      }, delayMs);
+    };
+
+    const markActivity = () => {
+      smokedThisIdlePeriod = false;
+      schedule(nextSmokeIdleDelay());
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        if (timer !== null) window.clearTimeout(timer);
+        timer = null;
+      } else {
+        markActivity();
+      }
+    };
+    schedule(nextSmokeIdleDelay());
+    window.addEventListener("pointerdown", markActivity);
+    window.addEventListener("keydown", markActivity);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      disposed = true;
+      if (timer !== null) window.clearTimeout(timer);
+      window.removeEventListener("pointerdown", markActivity);
+      window.removeEventListener("keydown", markActivity);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, []);
 
   useEffect(() => {
     resetIdleTimer();
@@ -346,6 +663,7 @@ export default function BartenderMain({
     window.addEventListener("focus", markActivity);
 
     return () => {
+      clearRetainedToolReplyTimeout();
       clearIdleTimer();
       window.removeEventListener("pointerdown", markActivity);
       window.removeEventListener("keydown", markActivity);
@@ -365,6 +683,8 @@ export default function BartenderMain({
         value={displayedMessage}
         readOnly
         isSpeaking={isSpeaking}
+        isContentComplete={isReplyComplete}
+        onTypingComplete={handleDialogTypingComplete}
         typingSpeed={config.Dialog_Typing_Speed}
         font="normal"
         rows={6}
@@ -374,6 +694,32 @@ export default function BartenderMain({
           chatFontClass,
         )}
       />
+      {setupGuideStep !== null && (
+        <div
+          {...ghostModeRegionProps}
+          className="absolute right-[calc(100%-15rem)] bottom-30 w-[min(20rem,calc(100vw-26rem))]"
+        >
+          <Textarea
+            value={setupGuideSteps[setupGuideStep]}
+            readOnly
+            rows={5}
+            font="normal"
+            aria-label={t("setup.guideLabel")}
+            title={t("setup.guideClickHint")}
+            onClick={handleSetupGuideClick}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                handleSetupGuideClick();
+              }
+            }}
+            className={cn(
+              "w-full cursor-pointer resize-none bg-foreground text-background",
+              chatFontClass,
+            )}
+          />
+        </div>
+      )}
       {toolStatus && (
         <div
           className={cn(
@@ -384,10 +730,11 @@ export default function BartenderMain({
           {toolStatus}
         </div>
       )}
-      <PSprite
-        className="p-sprite-container self-end"
-        data-tauri-drag-region
-        {...ghostModeRegionProps}
+      <PFileDropTarget
+        disabled={isLoading}
+        onFilesDropped={handleDroppedFiles}
+        onDrinkActionError={handleDrinkActionError}
+        onDrinkActionComplete={handleDrinkActionComplete}
       />
 
       {error && (
@@ -403,9 +750,11 @@ export default function BartenderMain({
         value={input}
         onChange={setInput}
         onSubmit={() => void handleSendMessage()}
+        onCancel={handleCancelConversation}
         placeholder={t("ui.inputPlaceholder") || "Enter message..."}
         disabled={isLoading}
-        buttonLabel={isLoading ? t("utils.sending") : t("utils.send")}
+        buttonLabel={t("utils.send")}
+        cancelLabel={t("utils.recall")}
         buttonClassName={cn("w-20 h-8 text-white", !usesPixelFont && "text-[9px]")}
         className="w-full justify-end"
         inputClassName={cn(

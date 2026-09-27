@@ -12,6 +12,7 @@ dependencies = [
  "dirs 6.0.0",
  "futures",
  "lancedb",
+ "rand 0.9.4",
  "serde",
  "serde_json",
  "tauri",

@@ -38,6 +38,16 @@ function ensureLocalProtoc() {
   const hasBundledInclude = fs.existsSync(
     path.join(bundledInclude, "google", "protobuf", "empty.proto"),
   );
+  const hasValidInclude = (candidate) =>
+    typeof candidate === "string" &&
+    fs.existsSync(path.join(candidate, "google", "protobuf", "empty.proto"));
+
+  if (env[protocIncludeKey] && !hasValidInclude(env[protocIncludeKey])) {
+    console.warn(
+      `[with-env] Ignoring invalid ${protocIncludeKey}: ${env[protocIncludeKey]}`,
+    );
+    delete env[protocIncludeKey];
+  }
 
   if (hasBundledProtoc) {
     env[protocKey] = bundledProtoc;
@@ -46,7 +56,7 @@ function ensureLocalProtoc() {
     env[protocIncludeKey] = bundledInclude;
   }
 
-  if (env[protocKey] && env[protocIncludeKey]) {
+  if (env[protocKey] && hasValidInclude(env[protocIncludeKey])) {
     return;
   }
 
@@ -172,7 +182,10 @@ for (const entry of envArgs) {
   }
 
   const key = resolveEnvKey(entry.slice(0, equalsIndex));
-  const value = entry.slice(equalsIndex + 1);
+  let value = entry.slice(equalsIndex + 1);
+  if (key.toUpperCase() === "CARGO_TARGET_DIR" && !path.isAbsolute(value)) {
+    value = path.resolve(repoRoot, value);
+  }
   env[key] = value;
 }
 

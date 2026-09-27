@@ -1,0 +1,3 @@
+This hidden file should be skipped by base_list because its name starts with a single dot.
+
+If it appears in the visible ingredient list, the hidden-file filter changed.

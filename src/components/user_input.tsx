@@ -9,8 +9,10 @@ export interface UserInputProps
   value: string;
   onChange: (value: string) => void;
   onSubmit?: (value: string) => void;
+  onCancel?: () => void;
   placeholder?: string;
   buttonLabel?: string;
+  cancelLabel?: string;
   disabled?: boolean;
   disableSubmitWhenEmpty?: boolean;
   className?: string;
@@ -24,8 +26,10 @@ export default function UserInput({
   value,
   onChange,
   onSubmit,
+  onCancel,
   placeholder,
   buttonLabel = "Send",
+  cancelLabel = "Cancel",
   disabled = false,
   disableSubmitWhenEmpty = true,
   className,
@@ -46,8 +50,9 @@ export default function UserInput({
     className: buttonPropsClassName,
     ...restButtonProps
   } = buttonProps ?? {};
-  const isSubmitDisabled =
-    disabled || (disableSubmitWhenEmpty && !value.trim());
+  const isCancelMode = disabled && Boolean(onCancel);
+  const isSubmitDisabled = disableSubmitWhenEmpty && !value.trim();
+  const isButtonDisabled = isCancelMode ? false : disabled || isSubmitDisabled;
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     inputOnKeyDown?.(event);
@@ -56,7 +61,7 @@ export default function UserInput({
     }
     if (event.key === "Enter" && !event.nativeEvent.isComposing) {
       event.preventDefault();
-      if (!isSubmitDisabled) {
+      if (!disabled && !isSubmitDisabled) {
         onSubmit?.(value);
       }
     }
@@ -64,7 +69,11 @@ export default function UserInput({
 
   const handleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
     buttonOnClick?.(event);
-    if (event.defaultPrevented || isSubmitDisabled) {
+    if (event.defaultPrevented || isButtonDisabled) {
+      return;
+    }
+    if (isCancelMode) {
+      onCancel?.();
       return;
     }
     onSubmit?.(value);
@@ -88,10 +97,10 @@ export default function UserInput({
       <Button
         {...restButtonProps}
         onClick={handleClick}
-        disabled={isSubmitDisabled}
+        disabled={isButtonDisabled}
         className={cn("text-primary-foreground", buttonPropsClassName, buttonClassName)}
       >
-        {buttonLabel}
+        {isCancelMode ? cancelLabel : buttonLabel}
       </Button>
     </div>
   );
