@@ -387,9 +387,13 @@ function EulaStep({
 }
 
 function EulaContent({ content }: { content: string }) {
+  // EULA assets use CRLF when packaged on Windows. Normalize before parsing so
+  // paragraph separators and Markdown hard breaks behave the same on every OS.
+  const normalizedContent = content.replace(/\r\n?/g, "\n");
+
   return (
     <article className="flex flex-col gap-4">
-      {content
+      {normalizedContent
         .trim()
         .split(/\n{2,}/)
         .map((block, index) => {
